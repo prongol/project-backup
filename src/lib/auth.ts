@@ -3,6 +3,7 @@ import { supabase } from './supabase';
 import type { User } from '@/types';
 import { sendEmailAction } from './emaila/emailActions';
 import { WelcomeEmail,emailLayout,emailVerificationEmail,passwordResetEmail } from './emaila/templates';
+import { createVerificationToken } from '@/app/actions/verification';
 
 // --------------------
 // SIGN UP WITH PROFILE CREATION
@@ -50,6 +51,7 @@ export async function signUp(data: {
         email: data.email,
         full_name: data.fullName,
         role: data.role,
+        profile_completed: false, // Ensure this is false initially
       });
 
     if (profileError) {
@@ -93,10 +95,25 @@ export async function signUp(data: {
       }
     }
 
-    // 4. Send welcome email (don't block on this)
+    // 4. Create custom verification token
+    let verificationUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/callback`;
+    try {
+      const tokenResult = await createVerificationToken(authData.user.id);
+      
+      if (tokenResult.success && tokenResult.token) {
+        // Build verification URL with token
+        verificationUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/auth/verify?token=${tokenResult.token}`;
+      } else {
+        console.error('Error creating verification token:', tokenResult.error);
+      }
+    } catch (tokenError) {
+      console.error('Error creating verification token:', tokenError);
+    }
+
+    // 5. Send welcome email with verification link
     try {
       console.log('📧 Attempting to send welcome email to:', data.email);
-      const welcomeEmail = WelcomeEmail(data.fullName, 'google.com');
+      const welcomeEmail = WelcomeEmail(data.fullName, verificationUrl);
       
       const emailResult = await sendEmailAction({
         to: data.email,
