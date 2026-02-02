@@ -9,6 +9,7 @@ interface FreelancerCardProps {
   status: 'online' | 'offline' | 'connecting';
   skills: string[];
   rating: number;
+  onClick?: () => void;
 }
 
 export function FreelancerCard({ 
@@ -17,7 +18,8 @@ export function FreelancerCard({
   avatar, 
   status, 
   skills, 
-  rating 
+  rating,
+  onClick 
 }: FreelancerCardProps) {
   // Calculate status display
   const getStatusConfig = () => {
@@ -37,7 +39,7 @@ export function FreelancerCard({
   const displaySkills = skills.slice(0, 3);
 
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full" onClick={onClick}>
       <div className="group relative w-full bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer border border-gray-200">
         
         {/* Verified Badge - Top Left */}

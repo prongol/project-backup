@@ -86,7 +86,7 @@ function SearchFreelancersContent() {
     loadFreelancers();
   }, [searchQuery, selectedCategory, minRating, maxRate, sortBy]);
 
-  const FreelancerCard = ({ freelancer }: { freelancer: RankedFreelancer }) => {
+  const FreelancerCard = ({ freelancer }: { freelancer: any }) => {
     const profile = freelancer.profiles;
     const name = profile?.full_name || 'Unknown';
     const avatar = profile?.avatar_url || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`;
@@ -97,14 +97,16 @@ function SearchFreelancersContent() {
           onClick={() => router.push(`/freelancer/profile/${freelancer.id}`)}
           className="bg-white rounded-xl border-2 border-gray-200 hover:border-[#0CF574] transition-all p-6 cursor-pointer hover:shadow-lg relative"
         >
-          {/* Recommendation Badge */}
-          {freelancer.score && (
-            <div className="absolute top-4 right-4">
-              <div className="bg-[#0CF574]/10 text-[#0CF574] px-2 py-1 rounded-md text-xs font-bold">
-                Match: {Math.round(freelancer.score.finalScore)}%
-              </div>
+          {/* Status Badge */}
+          <div className="absolute top-4 right-4">
+            <div className={`px-2 py-1 rounded-md text-xs font-bold ${
+              freelancer.status === 'online' 
+                ? 'bg-green-100 text-green-600' 
+                : 'bg-gray-100 text-gray-600'
+            }`}>
+              {freelancer.status === 'online' ? 'Online' : 'Offline'}
             </div>
-          )}
+          </div>
           
           {/* Avatar */}
           <div className="flex items-start gap-4 mb-4">
@@ -166,14 +168,16 @@ function SearchFreelancersContent() {
         onClick={() => router.push(`/freelancer/profile/${freelancer.id}`)}
         className="bg-white rounded-xl border-2 border-gray-200 hover:border-[#0CF574] transition-all p-6 cursor-pointer hover:shadow-lg relative"
       >
-        {/* Recommendation Badge */}
-        {freelancer.score && (
-          <div className="absolute top-4 right-4">
-            <div className="bg-[#0CF574]/10 text-[#0CF574] px-3 py-1.5 rounded-md text-sm font-bold">
-              {Math.round(freelancer.score.finalScore)}% Match
-            </div>
+        {/* Status Badge */}
+        <div className="absolute top-4 right-4">
+          <div className={`px-3 py-1.5 rounded-md text-sm font-bold ${
+            freelancer.status === 'online' 
+              ? 'bg-green-100 text-green-600' 
+              : 'bg-gray-100 text-gray-600'
+          }`}>
+            {freelancer.status === 'online' ? 'Online' : 'Offline'}
           </div>
-        )}
+        </div>
         
         <div className="flex items-start gap-6">
           <img
@@ -375,7 +379,7 @@ function SearchFreelancersContent() {
         </div>
 
         {/* Results */}
-        {rankedFreelancers.length === 0 ? (
+        {freelancers.length === 0 ? (
           <div className="bg-white rounded-xl shadow-sm border p-12 text-center">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Search className="w-8 h-8 text-gray-400" />
@@ -399,7 +403,7 @@ function SearchFreelancersContent() {
             ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
             : "space-y-4"
           }>
-            {rankedFreelancers.map(freelancer => (
+            {freelancers.map(freelancer => (
               <FreelancerCard key={freelancer.id} freelancer={freelancer} />
             ))}
           </div>

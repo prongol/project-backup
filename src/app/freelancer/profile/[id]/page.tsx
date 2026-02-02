@@ -20,9 +20,7 @@ import {
   Zap
 } from 'lucide-react';
 import { Freelancer, PortfolioItem, Review } from '@/types';
-import { demoApi } from '@/lib/demoApi';
 import { getCurrentUser } from '@/lib/auth';
-import { findSimilarFreelancers, RankedFreelancer } from '@/lib/recommendation';
 
 export default function FreelancerProfilePage() {
   const params = useParams();
@@ -32,7 +30,6 @@ export default function FreelancerProfilePage() {
   const [freelancer, setFreelancer] = useState<Freelancer | null>(null);
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
-  const [similarFreelancers, setSimilarFreelancers] = useState<RankedFreelancer[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'portfolio' | 'reviews'>('overview');
@@ -47,25 +44,19 @@ export default function FreelancerProfilePage() {
     try {
       setLoading(true);
       
-      // Load freelancer data
-      const freelancerData = await demoApi.getFreelancerById(freelancerId);
-      if (!freelancerData) {
+      // Load freelancer data from real API
+      const response = await fetch(`/api/freelancers/${freelancerId}`);
+      
+      if (!response.ok) {
         router.push('/search/freelancers');
         return;
       }
-      setFreelancer(freelancerData);
-
-      // Load portfolio
-      const portfolioData = await demoApi.getFreelancerPortfolio(freelancerId);
-      setPortfolio(portfolioData);
-
-      // Load reviews
-      const reviewsData = await demoApi.getFreelancerReviews(freelancerId);
-      setReviews(reviewsData);
-
-      // Load similar freelancers using recommendation system
-      const similar = await findSimilarFreelancers(freelancerId, { limit: 3 });
-      setSimilarFreelancers(similar);
+      
+      const data = await response.json();
+      
+      setFreelancer(data.freelancer);
+      setPortfolio(data.portfolio || []);
+      setReviews(data.reviews || []);
 
       // Check if saved
       const savedProfiles = JSON.parse(localStorage.getItem('savedProfiles') || '[]');
@@ -73,6 +64,7 @@ export default function FreelancerProfilePage() {
       
     } catch (error) {
       console.error('Error loading freelancer data:', error);
+      router.push('/search/freelancers');
     } finally {
       setLoading(false);
     }
