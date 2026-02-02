@@ -8,6 +8,7 @@ export function useProfileGate() {
   const [gateOpen, setGateOpen] = useState(false);
   const [gateType, setGateType] = useState<'profile' | 'bank'>('profile');
   const [returnUrl, setReturnUrl] = useState<string>('');
+  const [skipRequirement, setSkipRequirement] = useState(false);
 
   const checkProfileCompletion = useCallback(() => {
     if (!user) return false;
@@ -20,27 +21,28 @@ export function useProfileGate() {
   }, [user]);
 
   const requireProfileCompletion = useCallback((returnTo?: string) => {
-    if (!checkProfileCompletion()) {
+    if (!checkProfileCompletion() && !skipRequirement) {
       setGateType('profile');
       setReturnUrl(returnTo || '');
       setGateOpen(true);
       return false;
     }
     return true;
-  }, [checkProfileCompletion]);
+  }, [checkProfileCompletion, skipRequirement]);
 
   const requireBankDetails = useCallback((returnTo?: string) => {
-    if (!checkBankDetails()) {
+    if (!checkBankDetails() && !skipRequirement) {
       setGateType('bank');
       setReturnUrl(returnTo || '');
       setGateOpen(true);
       return false;
     }
     return true;
-  }, [checkBankDetails]);
+  }, [checkBankDetails, skipRequirement]);
 
   const closeGate = useCallback(() => {
     setGateOpen(false);
+    setSkipRequirement(true); // Allow skipping after user clicks "I'll do this later"
   }, []);
 
   return {

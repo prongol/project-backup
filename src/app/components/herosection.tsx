@@ -4,7 +4,6 @@ import { Manrope } from "next/font/google";
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { FreelancerCard } from './FreelancerCard';
-import { rankAllFreelancers, RankedFreelancer } from '@/lib/recommendation';
 import Link from 'next/link';
 import { 
   Search, 
@@ -72,7 +71,7 @@ const HeroSection = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'hire' | 'get-hired'>('hire');
   const [searchQuery, setSearchQuery] = useState('');
-  const [topFreelancers, setTopFreelancers] = useState<RankedFreelancer[]>([]);
+  const [topFreelancers, setTopFreelancers] = useState<any[]>([]);
   const [loadingFreelancers, setLoadingFreelancers] = useState(true);
 
   // Derived auth state
@@ -80,17 +79,18 @@ const HeroSection = () => {
   const isClient = user?.role === 'client';
   const isFreelancer = user?.role === 'freelancer';
 
-  // Load top freelancers using recommendation system
+  // Load top freelancers from database
   useEffect(() => {
     const loadTopFreelancers = async () => {
       try {
         setLoadingFreelancers(true);
-        const ranked = await rankAllFreelancers({ 
-          limit: 8, 
-          minRating: 4.0,
-          availableOnly: false 
-        });
-        setTopFreelancers(ranked);
+        const response = await fetch('/api/freelancers/all?limit=8&minRating=4.0');
+        if (response.ok) {
+          const data = await response.json();
+          setTopFreelancers(data.freelancers || []);
+        } else {
+          console.error('Failed to fetch freelancers');
+        }
       } catch (error) {
         console.error('Error loading top freelancers:', error);
       } finally {
@@ -327,20 +327,18 @@ const HeroSection = () => {
                   </div>
                 ))
               ) : topFreelancers.length > 0 ? (
-                topFreelancers.map((freelancer) => {
-                  const profile = freelancer.profiles;
-                  return (
+                topFreelancers.map((freelancer) => (
                     <FreelancerCard
                       key={freelancer.id}
-                      name={profile?.full_name || 'Unknown'}
-                      username={`@${freelancer.username}`}
-                      avatar={profile?.avatar_url || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`}
-                      status="online"
+                      name={freelancer.profiles?.full_name || 'Unknown'}
+                      username={`@${freelancer.username || 'unknown'}`}
+                      avatar={freelancer.profiles?.avatar_url || `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70)}`}
+                      status={freelancer.status || "offline"}
                       skills={freelancer.skills || []}
                       rating={freelancer.rating || 0}
+                      onClick={() => router.push(`/freelancer/profile/${freelancer.id}`)}
                     />
-                  );
-                })
+                ))
               ) : (
                 <div className="col-span-4 text-center py-12">
                   <p className="text-gray-600">No freelancers available at the moment.</p>

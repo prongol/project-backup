@@ -4,8 +4,6 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Manrope } from 'next/font/google';
 import { Search, Filter, Grid, List, Star, MapPin, DollarSign, Clock, CheckCircle, Award } from 'lucide-react';
-import { searchAndRankFreelancers, RankedFreelancer } from '@/lib/recommendation';
-import { mapFreelancer } from '@/lib/mappers';
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -25,7 +23,7 @@ const CATEGORIES = [
 function SearchFreelancersContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [rankedFreelancers, setRankedFreelancers] = useState<RankedFreelancer[]>([]);
+  const [freelancers, setFreelancers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   
@@ -34,43 +32,50 @@ function SearchFreelancersContent() {
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || 'All Categories');
   const [minRating, setMinRating] = useState(0);
   const [maxRate, setMaxRate] = useState(10000);
-  const [sortBy, setSortBy] = useState('recommended'); // Changed default to 'recommended'
+  const [sortBy, setSortBy] = useState('rating');
   const [showFilters, setShowFilters] = useState(false);
 
-  // Load and filter freelancers using recommendation system
+  // Load freelancers from database
   useEffect(() => {
     const loadFreelancers = async () => {
       setLoading(true);
       try {
-        // Use the recommendation system to get ranked freelancers
-        const results = await searchAndRankFreelancers({
-          query: searchQuery || undefined,
-          category: selectedCategory !== 'All Categories' ? selectedCategory : undefined,
-          minRating: minRating > 0 ? minRating : undefined,
-          maxRate: maxRate < 10000 ? maxRate : undefined,
-        });
+        const params = new URLSearchParams();
         
-        // Apply sorting
-        let sortedResults = [...results];
-        switch (sortBy) {
-          case 'recommended':
-            // Already sorted by recommendation score
-            break;
-          case 'rating':
-            sortedResults.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-            break;
-          case 'price-low':
-            sortedResults.sort((a, b) => (a.hourly_rate || 0) - (b.hourly_rate || 0));
-            break;
-          case 'price-high':
-            sortedResults.sort((a, b) => (b.hourly_rate || 0) - (a.hourly_rate || 0));
-            break;
-          case 'reviews':
-            sortedResults.sort((a, b) => (b.completed_jobs || 0) - (a.completed_jobs || 0));
-            break;
+        if (searchQuery) params.append('search', searchQuery);
+        if (selectedCategory && selectedCategory !== 'All Categories') {
+          params.append('category', selectedCategory);
         }
+        if (minRating > 0) params.append('minRating', minRating.toString());
         
-        setRankedFreelancers(sortedResults);
+        const response = await fetch(`/api/freelancers/all?${params.toString()}`);
+        if (response.ok) {
+          const data = await response.json();
+          let results = data.freelancers || [];
+          
+          // Apply sorting
+          switch (sortBy) {
+            case 'rating':
+              results.sort((a: any, b: any) => (b.rating || 0) - (a.rating || 0));
+              break;
+            case 'price-low':
+              results.sort((a: any, b: any) => (a.hourly_rate || 0) - (b.hourly_rate || 0));
+              break;
+            case 'price-high':
+              results.sort((a: any, b: any) => (b.hourly_rate || 0) - (a.hourly_rate || 0));
+              break;
+            case 'reviews':
+              results.sort((a: any, b: any) => (b.total_reviews || 0) - (a.total_reviews || 0));
+              break;
+          }
+          
+          // Apply rate filter
+          if (maxRate < 10000) {
+            results = results.filter((f: any) => (f.hourly_rate || 0) <= maxRate);
+          }
+          
+          setFreelancers(results);
+        }
       } catch (error) {
         console.error('Error loading freelancers:', error);
       } finally {

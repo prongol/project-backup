@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useProfileGate } from '@/hooks/useProfileGate';
 import ProfileGateModal from '@/components/ProfileGateModal';
 import WelcomeBanner from '@/components/WelcomeBanner';
+import MockPaymentSystem from '@/components/MockPaymentSystem';
 import { Briefcase, DollarSign, Calendar, Tag, CheckCircle2 } from 'lucide-react';
 
 const manrope = Manrope({
@@ -56,6 +57,7 @@ export default function PostJobPage() {
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -92,17 +94,7 @@ export default function PostJobPage() {
     e.preventDefault();
     setError('');
 
-    // Check profile completion first
-    if (!requireProfileCompletion('/client/post-job')) {
-      return;
-    }
-
-    // Check bank details completion
-    if (!requireBankDetails('/client/post-job')) {
-      return;
-    }
-
-    // Validation
+    // Validation first - check if form is complete and valid
     if (!formData.title.trim()) {
       setError('Job title is required');
       return;
@@ -128,6 +120,22 @@ export default function PostJobPage() {
       return;
     }
 
+    // Now check profile completion (only after valid form)
+    if (!requireProfileCompletion('/client/post-job')) {
+      return;
+    }
+
+    // Check bank details completion (only after valid form)
+    if (!requireBankDetails('/client/post-job')) {
+      return;
+    }
+
+    // Show payment modal instead of immediately creating job
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentComplete = async (paymentId: string) => {
+    setShowPaymentModal(false);
     setIsLoading(true);
 
     try {
@@ -159,6 +167,7 @@ export default function PostJobPage() {
         skills: formData.skills,
         deadline: formData.deadline || null,
         status: 'open',
+        payment_id: paymentId, // Link to the mock payment
       };
 
       console.log('Posting job:', jobPayload);
@@ -403,6 +412,15 @@ export default function PostJobPage() {
         type={gateType}
         role="client"
         returnTo={returnUrl}
-      />    </div>
+      />
+
+      {/* Payment Modal */}
+      <MockPaymentSystem
+        isOpen={showPaymentModal}
+        onClose={() => setShowPaymentModal(false)}
+        jobBudget={parseFloat(formData.budget) || 0}
+        onPaymentComplete={handlePaymentComplete}
+      />
+    </div>
   );
 }
