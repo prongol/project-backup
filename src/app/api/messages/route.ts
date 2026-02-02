@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabse/server';
+import { createClient } from '@/lib/supabase/server';
 
 // GET /api/messages?conversationId=xxx - Get messages for a conversation
 export async function GET(request: NextRequest) {

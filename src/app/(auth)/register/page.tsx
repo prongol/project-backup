@@ -8,8 +8,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { validateEmail, signUpSchema } from '@/lib/validations';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { sendEmail } from '@/app/components/mailer';
-import { verificationEmail } from '@/utils/emailTemplates';
 const manrope = Manrope({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
@@ -109,7 +107,7 @@ export default function RegisterPage() {
     return;
   }
 
-  if (!isEmailValid) {
+  if (!isEmailValid) { //need to work on this,
     setError('Please enter a valid email address');
     toast.error('Please enter a valid email address');
     return;
@@ -149,8 +147,8 @@ export default function RegisterPage() {
   }
   
   try {
-    // Step 1: Sign up the user
-    await signUp({
+    // Step 1: Sign up the user via backend API
+    const signUpResponse = await signUp({
       email: formData.email.toLowerCase().trim(),
       password: formData.password,
       fullName: formData.fullName.trim(),
@@ -159,37 +157,14 @@ export default function RegisterPage() {
       clientType: formData.role === 'client' ? formData.clientType : undefined,
     });
 
-    // Step 2: Since signUp doesn't return userId, we need to get it from your database
-    // Import at the top of file
-    const { createClient } = await import('@/lib/supabse/client');
-    const supabase = createClient();
-    
-    // Get the user that was just created
-    const { data: userData, error: userError } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', formData.email.toLowerCase().trim())
-      .single();
+    // Backend handles:
+    // ✅ Creating auth user
+    // ✅ Creating profile
+    // ✅ Creating role-specific record (freelancer/client)
+    // ✅ Sending verification email
+    // So registration is complete!
 
-    if (userError || !userData) {
-      console.log(userData)
-      throw new Error('User created but could not retrieve user data,specifically this not working');
-    }
-
-    // Step 3: Import and create verification token
-    const { createVerificationToken } = await import('@/app/components/token');
-    const token = await createVerificationToken(userData.id);
-
-    // Step 4: Send verification email
-    const htmlContent = verificationEmail(formData.fullName, token);
-    
-    await sendEmail(
-      formData.email.toLowerCase().trim(),
-      'Verify your NepLancer account',
-      htmlContent
-    );
-
-    // Step 5: Show success and redirect
+    // Step 2: Show success and redirect
     toast.success('Registration successful! Please check your email to verify your account.', {
       duration: 6000,
     });
@@ -200,6 +175,7 @@ export default function RegisterPage() {
     const errorMessage = err instanceof Error ? err.message : 'Registration failed. Please try again.';
     setError(errorMessage);
     toast.error(errorMessage);
+    console.log(errorMessage);
   }
 };
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabse/server';
+import { createClient } from '@/lib/supabase/server';
 
 // GET /api/profile/bank-details - Get user's bank details
 export async function GET() {

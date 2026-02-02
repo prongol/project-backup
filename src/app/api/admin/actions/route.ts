@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabse/server';
+import { createClient } from '@/lib/supabase/server';
 import { sendEmail, getContractWarningEmail } from '@/lib/emailaa';
 
 // POST /api/admin/actions - Execute admin action

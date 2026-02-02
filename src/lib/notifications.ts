@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabse/server';
+import { createClient } from '@/lib/supabase/server';
 
 // Notification types and their icons/colors
 export const NOTIFICATION_TYPES = {

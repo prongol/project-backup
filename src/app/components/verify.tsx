@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { createClient } from '@/lib/supabse/client';
+import { createClient } from '@/lib/supabase/client';
 
 export async function POST(req:Request){
     const url = new URL(req.url);

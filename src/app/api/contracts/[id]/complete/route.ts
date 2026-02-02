@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabse/server';
+import { createClient } from '@/lib/supabase/server';
 
 // POST /api/contracts/[id]/complete - Mark contract work as complete (freelancer submits)
 export async function POST(

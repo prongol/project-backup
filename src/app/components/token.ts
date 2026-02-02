@@ -1,6 +1,6 @@
 // lib/verification.ts
 import crypto from 'crypto';
-import { supabaseAdmin } from '@/lib/supabse/serverClient'; // your server-side supabase client
+import { supabaseAdmin } from '@/lib/supabase/serverClient'; // your server-side supabase client
 
 export async function createVerificationToken(userId: number) {
   const supabase = supabaseAdmin;

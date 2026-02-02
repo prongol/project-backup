@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabse/server';
+import { createClient } from '@/lib/supabase/server';
 
 // POST /api/contracts/[id]/approve - Approve completed work and release payment (client)
 export async function POST(
