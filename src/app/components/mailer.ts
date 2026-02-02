@@ -1,5 +1,11 @@
 'use server';
 
+/**
+ * Server Component Email Utility
+ * This component uses 'use server' directive to ensure all operations
+ * happen on the server side where Node.js modules are available.
+ */
+
 import { getMaxListeners } from 'events';
 import nodemailer from 'nodemailer';
 

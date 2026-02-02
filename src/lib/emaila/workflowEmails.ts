@@ -1,5 +1,5 @@
 import {
-  welcomeEmail,
+  WelcomeEmail,
   applicationAcceptedEmail,
   newApplicationEmail,
   milestoneCompletedEmail,

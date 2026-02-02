@@ -167,7 +167,7 @@ export const stats = (items: Array<{label: string; value: string}>) => `
 
 // ===== AUTHENTICATION TEMPLATES =====
 
-export const welcomeEmail = (name: string, verificationUrl: string) => emailLayout(`
+export const WelcomeEmail = (name: string, verificationUrl: string) => emailLayout(`
   <h1>Welcome to Neplancer! 🎉</h1>
   <p>Hi ${name},</p>
   <p>Welcome aboard! We're thrilled to have you join the Neplancer community. Whether you're here to find talented freelancers or showcase your skills to clients, you're in the right place.</p>
@@ -478,7 +478,7 @@ export const accountSuspensionWarning = (name: string, reason: string) => emailL
 // Export all templates
 export const emailTemplates = {
   // Authentication
-  welcomeEmail,
+  WelcomeEmail,
   emailVerificationEmail,
   passwordResetEmail,
   passwordChangedEmail,

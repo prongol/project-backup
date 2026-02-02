@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabse/server';
-import { sendEmail, getContractWarningEmail } from '@/lib/email';
+import { sendEmail, getContractWarningEmail } from '@/lib/emailaa';
 
 // POST /api/admin/actions - Execute admin action
 export async function POST(request: Request) {

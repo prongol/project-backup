@@ -1,7 +1,8 @@
 // lib/auth.ts
 import { supabase } from './supabase';
 import type { User } from '@/types';
-import { sendEmail, getWelcomeEmail, getEmailVerificationEmail } from './email';
+import { sendEmailAction } from './emaila/emailActions';
+import { WelcomeEmail,emailLayout,emailVerificationEmail,passwordResetEmail } from './emaila/templates';
 
 // --------------------
 // SIGN UP WITH PROFILE CREATION
@@ -95,9 +96,19 @@ export async function signUp(data: {
     // 4. Send welcome email (don't block on this)
     try {
       console.log('📧 Attempting to send welcome email to:', data.email);
-      const welcomeEmail = getWelcomeEmail(data.fullName, data.email);
-      await sendEmail(welcomeEmail);
-      console.log('✅ Welcome email sent successfully to:', data.email);
+      const welcomeEmail = WelcomeEmail(data.fullName, 'google.com');
+      
+      const emailResult = await sendEmailAction({
+        to: data.email,
+        subject: 'Welcome to Neplancer!',
+        html: welcomeEmail
+      });
+      
+      if (emailResult.success) {
+        console.log('✅ Welcome email sent successfully to:', data.email);
+      } else {
+        console.error('⚠️ Failed to send welcome email:', emailResult.error);
+      }
     } catch (emailError) {
       console.error('⚠️ Failed to send welcome email:', emailError);
       console.error('⚠️ Email error details:', emailError instanceof Error ? emailError.message : emailError);
