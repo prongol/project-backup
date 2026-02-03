@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { EmailNotifications } from '@/lib/notificationEmails';
 
 // GET /api/contracts - Get all contracts for the authenticated user
 export async function GET(request: Request) {
@@ -325,6 +326,40 @@ export async function POST(request: Request) {
         read: false,
         created_at: new Date().toISOString(),
       });
+
+    // Send email notification to freelancer about new contract
+    try {
+      const { data: freelancerProfile } = await supabase
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', freelancerProfileId)
+        .single();
+
+      const { data: clientProfile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .single();
+
+      if (freelancerProfile && clientProfile) {
+        const duration = estimated_hours ? `${estimated_hours} hours` : (end_date && start_date) ? 'As specified in contract' : 'To be determined';
+        
+        await EmailNotifications.send(
+          EmailNotifications.contractArrived(
+            freelancerProfile.full_name || 'Freelancer',
+            freelancerProfile.email,
+            clientProfile.full_name || 'Client',
+            title,
+            contract.id,
+            parseFloat(total_amount),
+            duration
+          )
+        );
+        console.log('📧 Contract arrival email sent to freelancer:', freelancerProfile.email);
+      }
+    } catch (emailError) {
+      console.error('⚠️ Failed to send contract arrival email:', emailError);
+    }
 
     return NextResponse.json({ 
       success: true, 

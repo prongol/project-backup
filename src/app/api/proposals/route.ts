@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { EmailNotifications } from '@/lib/notificationEmails';
 
 // GET /api/proposals - Get proposals
 export async function GET(request: Request) {
@@ -286,6 +287,33 @@ export async function POST(request: Request) {
     if (notificationError) {
       console.error('Error creating notification:', notificationError);
       // Don't fail the request if notification fails
+    }
+
+    // Send email notification to client about new proposal
+    try {
+      const { data: clientData } = await supabase
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', clientProfileId)
+        .single();
+
+      if (clientData) {
+        await EmailNotifications.send(
+          EmailNotifications.proposalReceived(
+            clientData.full_name || 'Client',
+            clientData.email,
+            freelancerName,
+            job.title,
+            job.id,
+            data.id,
+            parseFloat(proposed_budget),
+            cover_letter
+          )
+        );
+        console.log('📧 Proposal notification email sent to client:', clientData.email);
+      }
+    } catch (emailError) {
+      console.error('⚠️ Failed to send proposal notification email:', emailError);
     }
 
     return NextResponse.json({ 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { EmailNotifications } from '@/lib/notificationEmails';
 
 export async function POST(request: NextRequest) {
   try {
@@ -58,6 +59,49 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('✅ Job created successfully:', data);
+
+    // Get client profile details for email
+    try {
+      // First get the client record to find profile_id
+      const { data: client, error: clientError } = await supabase
+        .from('clients')
+        .select('profile_id')
+        .eq('id', client_id)
+        .single();
+
+      if (clientError) {
+        console.error('⚠️ Failed to fetch client:', clientError);
+      } else if (client) {
+        // Now get the profile with email using profile_id
+        const { data: clientProfile, error: profileError } = await supabase
+          .from('profiles')
+          .select('full_name, email')
+          .eq('id', client.profile_id)
+          .single();
+
+        if (profileError) {
+          console.error('⚠️ Failed to fetch profile:', profileError);
+        } else if (clientProfile && clientProfile.email) {
+          // Send job posted confirmation email
+          await EmailNotifications.send(
+            EmailNotifications.jobPosted(
+              clientProfile.full_name || 'Client',
+              clientProfile.email,
+              data.title,
+              data.id,
+              data.budget,
+              data.category
+            )
+          );
+          console.log('📧 Job posted email sent to:', clientProfile.email);
+        } else {
+          console.warn('⚠️ Client profile has no email address');
+        }
+      }
+    } catch (emailError) {
+      // Don't fail the request if email fails
+      console.error('⚠️ Failed to send job posted email:', emailError);
+    }
 
     return NextResponse.json(
       { success: true, job: data },

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { EmailNotifications } from '@/lib/notificationEmails';
 
 // POST /api/contracts/[id]/sign - Sign a contract
 export async function POST(
@@ -147,6 +148,44 @@ export async function POST(
         read: false,
         created_at: now,
       });
+
+    // Send email notification when freelancer signs (client gets notified)
+    if (role === 'freelancer' && bothSigned) {
+      try {
+        const { data: clientProfile } = await supabase
+          .from('profiles')
+          .select('full_name, email')
+          .eq('id', contract.client.profile_id)
+          .single();
+
+        const { data: freelancerProfile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', contract.freelancer.profile_id)
+          .single();
+
+        if (clientProfile && freelancerProfile) {
+          const startDate = contract.start_date 
+            ? new Date(contract.start_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+            : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+          await EmailNotifications.send(
+            EmailNotifications.freelancerSignedContract(
+              clientProfile.full_name || 'Client',
+              clientProfile.email,
+              freelancerProfile.full_name || 'Freelancer',
+              contract.title,
+              contract.id,
+              contract.total_amount,
+              startDate
+            )
+          );
+          console.log('📧 Contract signed email sent to client:', clientProfile.email);
+        }
+      } catch (emailError) {
+        console.error('⚠️ Failed to send contract signed email:', emailError);
+      }
+    }
 
     return NextResponse.json({ 
       success: true,

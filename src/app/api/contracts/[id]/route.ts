@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { EmailNotifications } from '@/lib/notificationEmails';
 
 // GET /api/contracts/[id] - Get single contract
 export async function GET(
@@ -286,6 +287,50 @@ export async function PATCH(
         link: `/contracts/${id}`,
         read: false,
       });
+
+      // Send email notification for contract cancellation (freelancer gets notified)
+      if (status === 'cancelled' && isClient) {
+        try {
+          const { data: freelancerProfile } = await supabase
+            .from('profiles')
+            .select('full_name, email')
+            .eq('id', contract.freelancer.profile_id)
+            .single();
+
+          const { data: clientProfile } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', contract.client.profile_id)
+            .single();
+
+          if (freelancerProfile && clientProfile) {
+            // Get payment information if any milestones were completed
+            const { data: paidMilestones } = await supabase
+              .from('contract_milestones')
+              .select('freelancer_net_amount')
+              .eq('contract_id', id)
+              .eq('status', 'paid');
+
+            const totalPaid = paidMilestones?.reduce((sum, m) => sum + (m.freelancer_net_amount || 0), 0) || 0;
+
+            await EmailNotifications.send(
+              EmailNotifications.projectCancelled(
+                freelancerProfile.full_name || 'Freelancer',
+                freelancerProfile.email,
+                clientProfile.full_name || 'Client',
+                contract.title,
+                contract.id,
+                cancellation_reason || 'No reason provided',
+                totalPaid > 0,
+                totalPaid
+              )
+            );
+            console.log('📧 Project cancellation email sent to freelancer:', freelancerProfile.email);
+          }
+        } catch (emailError) {
+          console.error('⚠️ Failed to send project cancellation email:', emailError);
+        }
+      }
 
       return NextResponse.json({ 
         success: true, 

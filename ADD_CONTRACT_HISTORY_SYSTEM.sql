@@ -87,8 +87,8 @@ BEGIN
     OLD.title IS DISTINCT FROM NEW.title OR
     OLD.description IS DISTINCT FROM NEW.description OR
     OLD.total_amount IS DISTINCT FROM NEW.total_amount OR
-    OLD.deadline IS DISTINCT FROM NEW.deadline OR
-    OLD.payment_type IS DISTINCT FROM NEW.payment_type
+    OLD.end_date IS DISTINCT FROM NEW.end_date OR
+    OLD.contract_type IS DISTINCT FROM NEW.contract_type
   )) THEN
     INSERT INTO contract_history (
       contract_id,
@@ -105,15 +105,15 @@ BEGIN
         'title', OLD.title,
         'description', OLD.description,
         'total_amount', OLD.total_amount,
-        'deadline', OLD.deadline,
-        'payment_type', OLD.payment_type
+        'end_date', OLD.end_date,
+        'contract_type', OLD.contract_type
       ),
       jsonb_build_object(
         'title', NEW.title,
         'description', NEW.description,
         'total_amount', NEW.total_amount,
-        'deadline', NEW.deadline,
-        'payment_type', NEW.payment_type
+        'end_date', NEW.end_date,
+        'contract_type', NEW.contract_type
       ),
       'Contract details updated'
     );

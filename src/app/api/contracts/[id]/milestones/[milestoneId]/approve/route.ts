@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { EmailNotifications } from '@/lib/notificationEmails';
 
 // POST /api/contracts/[id]/milestones/[milestoneId]/approve - Approve milestone and release payment
 export async function POST(
@@ -188,6 +189,38 @@ export async function POST(
         read: false,
         created_at: now,
       });
+
+    // Send email notification to freelancer about payment
+    try {
+      const { data: freelancerProfile } = await supabase
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', contract.freelancer.profile_id)
+        .single();
+
+      const { data: clientProfile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', contract.client.profile_id)
+        .single();
+
+      if (freelancerProfile && clientProfile) {
+        await EmailNotifications.send(
+          EmailNotifications.paymentReceived(
+            freelancerProfile.full_name || 'Freelancer',
+            freelancerProfile.email,
+            freelancerNetAmount,
+            contract.title,
+            clientProfile.full_name || 'Client',
+            contract.id,
+            'milestone'
+          )
+        );
+        console.log('📧 Payment received email sent to freelancer:', freelancerProfile.email);
+      }
+    } catch (emailError) {
+      console.error('⚠️ Failed to send payment received email:', emailError);
+    }
 
     return NextResponse.json({ 
       success: true,

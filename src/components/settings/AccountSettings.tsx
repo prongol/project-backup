@@ -1,10 +1,28 @@
 "use client"
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Eye, EyeOff, Smartphone, Monitor, LogOut, AlertCircle, CheckCircle2, QrCode } from "lucide-react";
+import { Eye, EyeOff, Smartphone, Monitor, LogOut, AlertCircle, CheckCircle2, QrCode, Loader2 } from "lucide-react";
 import BankDetailsSettings from "@/components/BankDetailsSettings";
+
+interface Session {
+  id: string;
+  device: string;
+  location: string;
+  lastActive: string;
+  current: boolean;
+  ipAddress: string;
+}
+
+interface Activity {
+  id: string;
+  action: string;
+  timestamp: string;
+  ip: string;
+  status: string;
+  actionType: string;
+}
 
 export default function AccountSettings() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -26,65 +44,53 @@ export default function AccountSettings() {
     color: ""
   });
 
-  // Mock data for active sessions
-  const [activeSessions] = useState([
-    {
-      id: 1,
-      device: "Windows - Chrome",
-      location: "Kathmandu, Nepal",
-      lastActive: "Just now",
-      current: true,
-      icon: <Monitor className="w-5 h-5" />
-    },
-    {
-      id: 2,
-      device: "iPhone 14 Pro - Safari",
-      location: "Pokhara, Nepal",
-      lastActive: "2 hours ago",
-      current: false,
-      icon: <Smartphone className="w-5 h-5" />
-    },
-    {
-      id: 3,
-      device: "MacBook Pro - Chrome",
-      location: "Lalitpur, Nepal",
-      lastActive: "1 day ago",
-      current: false,
-      icon: <Monitor className="w-5 h-5" />
-    }
-  ]);
+  // Real data for active sessions
+  const [activeSessions, setActiveSessions] = useState<Session[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(true);
 
-  // Mock data for activity log
-  const [activityLog] = useState([
-    {
-      id: 1,
-      action: "Password changed",
-      timestamp: "2024-01-15 10:30 AM",
-      ip: "103.69.124.45",
-      status: "success"
-    },
-    {
-      id: 2,
-      action: "Login from new device",
-      timestamp: "2024-01-14 03:45 PM",
-      ip: "103.69.124.45",
-      status: "success"
-    },
-    {
-      id: 3,
-      action: "Failed login attempt",
-      timestamp: "2024-01-13 11:20 AM",
-      ip: "192.168.1.100",
-      status: "failed"
-    },
-    {
-      id: 4,
-      action: "Profile updated",
-      timestamp: "2024-01-12 09:15 AM",
-      ip: "103.69.124.45",
-      status: "success"
+  // Real data for activity log
+  const [activityLog, setActivityLog] = useState<Activity[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(true);
+
+  // Fetch sessions and activities on mount
+  useEffect(() => {
+    fetchSessions();
+    fetchActivities();
+  }, []);
+
+  const fetchSessions = async () => {
+    try {
+      setLoadingSessions(true);
+      const response = await fetch('/api/account/sessions');
+      if (response.ok) {
+        const data = await response.json();
+        setActiveSessions(data.sessions || []);
+      } else {
+        console.error('Failed to fetch sessions');
+      }
+    } catch (error) {
+      console.error('Error fetching sessions:', error);
+    } finally {
+      setLoadingSessions(false);
     }
-  ]);
+  };
+
+  const fetchActivities = async () => {
+    try {
+      setLoadingActivities(true);
+      const response = await fetch('/api/account/activity');
+      if (response.ok) {
+        const data = await response.json();
+        setActivityLog(data.activities || []);
+      } else {
+        console.error('Failed to fetch activities');
+      }
+    } catch (error) {
+      console.error('Error fetching activities:', error);
+    } finally {
+      setLoadingActivities(false);
+    }
+  };
 
   const calculatePasswordStrength = (password: string) => {
     let score = 0;
@@ -145,11 +151,26 @@ export default function AccountSettings() {
 
     setIsChangingPassword(true);
     try {
-      // TODO: Call API to change password
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      alert("Password changed successfully");
-      setPasswordData({ currentPassword: "", newPassword: "", confirmPassword: "" });
-      setPasswordStrength({ score: 0, label: "", color: "" });
+      const response = await fetch('/api/account/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword: passwordData.currentPassword,
+          newPassword: passwordData.newPassword
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        alert("Password changed successfully");
+        setPasswordData({ currentPassword: "", newPassword: "", confirmPassword: "" });
+        setPasswordStrength({ score: 0, label: "", color: "" });
+        // Refresh activity log to show password change
+        fetchActivities();
+      } else {
+        alert(data.error || "Failed to change password");
+      }
     } catch (error) {
       console.error("Failed to change password:", error);
       alert("Failed to change password");
@@ -175,11 +196,59 @@ export default function AccountSettings() {
     }
   };
 
-  const handleLogoutSession = () => {
+  const handleLogoutSession = async (sessionId: string) => {
     if (confirm("Are you sure you want to log out this session?")) {
-      // TODO: Call API to logout session
-      alert("Session logged out successfully");
+      try {
+        const response = await fetch('/api/account/sessions', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId })
+        });
+        
+        if (response.ok) {
+          alert("Session logged out successfully");
+          // Refresh sessions list
+          fetchSessions();
+        } else {
+          alert("Failed to logout session");
+        }
+      } catch (error) {
+        console.error('Error logging out session:', error);
+        alert("Error logging out session");
+      }
     }
+  };
+
+  const handleLogoutAllOtherSessions = async () => {
+    if (confirm("Are you sure you want to log out all other sessions?")) {
+      try {
+        const response = await fetch('/api/account/sessions', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ logoutAll: true })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          alert(data.message || "All other sessions logged out successfully");
+          // Refresh sessions list
+          fetchSessions();
+        } else {
+          alert("Failed to logout sessions");
+        }
+      } catch (error) {
+        console.error('Error logging out sessions:', error);
+        alert("Error logging out sessions");
+      }
+    }
+  };
+
+  const getDeviceIcon = (device: string) => {
+    const lowerDevice = device.toLowerCase();
+    if (lowerDevice.includes('iphone') || lowerDevice.includes('android') || lowerDevice.includes('mobile')) {
+      return <Smartphone className="w-5 h-5" />;
+    }
+    return <Monitor className="w-5 h-5" />;
   };
 
   return (
@@ -380,46 +449,60 @@ export default function AccountSettings() {
       <Card className="p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-6">Active Sessions</h2>
         
-        <div className="space-y-4">
-          {activeSessions.map((session) => (
-            <div 
-              key={session.id}
-              className="flex items-start gap-4 p-4 border border-gray-200 rounded-lg"
-            >
-              <div className="p-2 bg-gray-100 rounded-lg">
-                {session.icon}
-              </div>
-              
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="font-medium text-gray-900">{session.device}</h3>
-                  {session.current && (
-                    <span className="px-2 py-0.5 bg-[#0CF574]/20 text-xs font-medium rounded">
-                      Current
-                    </span>
-                  )}
+        {loadingSessions ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            <span className="ml-2 text-gray-500">Loading sessions...</span>
+          </div>
+        ) : activeSessions.length === 0 ? (
+          <p className="text-center text-gray-500 py-8">No active sessions found</p>
+        ) : (
+          <div className="space-y-4">
+            {activeSessions.map((session) => (
+              <div 
+                key={session.id}
+                className="flex items-start gap-4 p-4 border border-gray-200 rounded-lg"
+              >
+                <div className="p-2 bg-gray-100 rounded-lg">
+                  {getDeviceIcon(session.device)}
                 </div>
-                <p className="text-sm text-gray-600">{session.location}</p>
-                <p className="text-xs text-gray-500 mt-1">Last active: {session.lastActive}</p>
-              </div>
+                
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h3 className="font-medium text-gray-900">{session.device}</h3>
+                    {session.current && (
+                      <span className="px-2 py-0.5 bg-[#0CF574]/20 text-xs font-medium rounded">
+                        Current
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-600">{session.location}</p>
+                  <p className="text-xs text-gray-500 mt-1">Last active: {session.lastActive}</p>
+                </div>
 
-              {!session.current && (
-                <Button 
-                  onClick={() => handleLogoutSession()}
-                  variant="outline" 
-                  size="sm"
-                  className="text-red-600 border-red-600 hover:bg-red-50"
-                >
-                  <LogOut className="w-4 h-4 mr-1" />
-                  Logout
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
+                {!session.current && (
+                  <Button 
+                    onClick={() => handleLogoutSession(session.id)}
+                    variant="outline" 
+                    size="sm"
+                    className="text-red-600 border-red-600 hover:bg-red-50"
+                  >
+                    <LogOut className="w-4 h-4 mr-1" />
+                    Logout
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="mt-4">
-          <Button variant="outline" className="w-full text-red-600 border-red-600 hover:bg-red-50">
+          <Button 
+            variant="outline" 
+            className="w-full text-red-600 border-red-600 hover:bg-red-50"
+            onClick={handleLogoutAllOtherSessions}
+            disabled={loadingSessions || activeSessions.filter(s => !s.current).length === 0}
+          >
             Logout All Other Sessions
           </Button>
         </div>
@@ -429,33 +512,54 @@ export default function AccountSettings() {
       <Card className="p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-6">Recent Activity</h2>
         
-        <div className="space-y-3">
-          {activityLog.map((activity) => (
-            <div 
-              key={activity.id}
-              className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg"
-            >
-              <div className={`p-1.5 rounded-full ${activity.status === 'success' ? 'bg-green-100' : 'bg-red-100'}`}>
-                {activity.status === 'success' ? (
-                  <CheckCircle2 className="w-4 h-4 text-green-600" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-red-600" />
-                )}
+        {loadingActivities ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+            <span className="ml-2 text-gray-500">Loading activities...</span>
+          </div>
+        ) : activityLog.length === 0 ? (
+          <p className="text-center text-gray-500 py-8">No recent activity</p>
+        ) : (
+          <div className="space-y-3">
+            {activityLog.map((activity) => (
+              <div 
+                key={activity.id}
+                className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg"
+              >
+                <div className={`p-1.5 rounded-full ${activity.status === 'success' ? 'bg-green-100' : 'bg-red-100'}`}>
+                  {activity.status === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-red-600" />
+                  )}
+                </div>
+                
+                <div className="flex-1">
+                  <h3 className="font-medium text-gray-900 text-sm">{activity.action}</h3>
+                  <p className="text-xs text-gray-600 mt-1">
+                    {activity.timestamp} • IP: {activity.ip}
+                  </p>
+                </div>
               </div>
-              
-              <div className="flex-1">
-                <h3 className="font-medium text-gray-900 text-sm">{activity.action}</h3>
-                <p className="text-xs text-gray-600 mt-1">
-                  {activity.timestamp} • IP: {activity.ip}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         <div className="mt-4">
-          <Button variant="outline" className="w-full">
-            View Full Activity Log
+          <Button 
+            variant="outline" 
+            className="w-full"
+            onClick={fetchActivities}
+            disabled={loadingActivities}
+          >
+            {loadingActivities ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Refreshing...
+              </>
+            ) : (
+              'Refresh Activity Log'
+            )}
           </Button>
         </div>
       </Card>
