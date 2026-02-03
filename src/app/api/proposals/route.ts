@@ -131,7 +131,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const clientProfileId = job.clients?.profile_id;
+    const clientProfileId = job.clients?.[0]?.profile_id;
     if (!clientProfileId) {
       return NextResponse.json(
         { error: 'Client profile not found' },
@@ -183,7 +183,7 @@ export async function POST(request: Request) {
     }
 
     // Send proposal as message to the client
-    const freelancerName = freelancer.profiles?.full_name || 'A freelancer';
+    const freelancerName = freelancer.profiles?.[0]?.full_name || 'A freelancer';
     const freelancerProfileId = freelancer.profile_id;
 
     // Create or find conversation between freelancer and client (use clientProfileId, not job.client_id)

@@ -28,7 +28,7 @@ export function FileUpload({ userId, maxFiles = 5, onUploadComplete }: FileUploa
       const validation = validateFile(
         file,
         FILE_SIZE_LIMITS.PORTFOLIO,
-        ALLOWED_FILE_TYPES.IMAGE
+        ALLOWED_FILE_TYPES.IMAGE as any
       );
       
       if (!validation.valid) {

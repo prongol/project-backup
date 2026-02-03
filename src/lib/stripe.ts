@@ -6,12 +6,12 @@ if (!process.env.STRIPE_SECRET_KEY) {
 
 // Initialize Stripe
 export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2024-12-18.acacia',
+  apiVersion: '2025-11-17.clover',
   typescript: true,
 });
 
-// Platform fee percentage (e.g., 10%)
-export const PLATFORM_FEE_PERCENTAGE = 10;
+// Platform fee percentage (7%)
+export const PLATFORM_FEE_PERCENTAGE = 7;
 
 // Calculate platform fee
 export function calculatePlatformFee(amount: number): number {
@@ -133,16 +133,28 @@ export async function attachPaymentMethod(
 // Create Connect account for freelancer payouts
 export async function createConnectAccount(
   email: string,
-  freelancerId: string
+  freelancerId: string,
+  country: string = 'US'
 ) {
   const account = await stripe.accounts.create({
     type: 'express',
     email,
+    country,
     metadata: {
       freelancerId,
+      platform: 'neplancer',
     },
     capabilities: {
       transfers: { requested: true },
+      card_payments: { requested: true },
+    },
+    business_type: 'individual',
+    settings: {
+      payouts: {
+        schedule: {
+          interval: 'manual', // Let freelancers control when they get paid
+        },
+      },
     },
   });
 
@@ -153,16 +165,151 @@ export async function createConnectAccount(
 export async function createAccountLink(
   accountId: string,
   returnUrl: string,
-  refreshUrl: string
+  refreshUrl: string,
+  type: 'account_onboarding' | 'account_update' = 'account_onboarding'
 ) {
   const accountLink = await stripe.accountLinks.create({
     account: accountId,
     refresh_url: refreshUrl,
     return_url: returnUrl,
-    type: 'account_onboarding',
+    type,
+    collect: 'eventually_due',
   });
 
   return accountLink;
+}
+
+// Get Connect account status
+export async function getConnectAccountStatus(accountId: string) {
+  const account = await stripe.accounts.retrieve(accountId);
+  
+  return {
+    id: account.id,
+    charges_enabled: account.charges_enabled,
+    payouts_enabled: account.payouts_enabled,
+    details_submitted: account.details_submitted,
+    requirements: {
+      currently_due: account.requirements?.currently_due || [],
+      eventually_due: account.requirements?.eventually_due || [],
+      past_due: account.requirements?.past_due || [],
+      pending_verification: account.requirements?.pending_verification || [],
+    },
+    capabilities: account.capabilities,
+  };
+}
+
+// Create escrow payment with Connect (proper escrow)
+export async function createConnectEscrowPayment(
+  amount: number,
+  connectAccountId: string,
+  contractId: string,
+  clientId: string,
+  metadata?: Record<string, string>
+) {
+  const platformFeeAmount = Math.round((amount * PLATFORM_FEE_PERCENTAGE) / 100 * 100); // In cents
+
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount: Math.round(amount * 100), // Convert to cents
+    currency: 'usd',
+    application_fee_amount: platformFeeAmount,
+    on_behalf_of: connectAccountId, // Money goes to Connect account
+    capture_method: 'manual', // Hold funds in escrow until manual capture
+    automatic_payment_methods: {
+      enabled: true,
+    },
+    metadata: {
+      clientId,
+      contractId,
+      connectAccountId,
+      type: 'contract_escrow',
+      platformFeePercentage: PLATFORM_FEE_PERCENTAGE.toString(),
+      ...metadata,
+    },
+    description: `Escrow payment for contract ${contractId}`,
+  });
+
+  return paymentIntent;
+}
+
+// Release escrow payment (capture funds and transfer to freelancer)
+export async function releaseEscrowPayment(paymentIntentId: string) {
+  // Capture the held payment intent
+  const paymentIntent = await stripe.paymentIntents.capture(paymentIntentId);
+  return paymentIntent;
+}
+
+// Refund escrow payment
+export async function refundEscrowPayment(
+  paymentIntentId: string,
+  amount?: number,
+  reason: string = 'requested_by_customer'
+) {
+  const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+  
+  if (paymentIntent.status === 'requires_capture') {
+    // If payment is still held, cancel it
+    const cancelled = await stripe.paymentIntents.cancel(paymentIntentId);
+    return { type: 'cancelled', data: cancelled };
+  } else if (paymentIntent.status === 'succeeded') {
+    // If payment was captured, refund it
+    const refund = await stripe.refunds.create({
+      payment_intent: paymentIntentId,
+      amount: amount ? Math.round(amount * 100) : undefined,
+      reason: reason as any,
+    });
+    return { type: 'refunded', data: refund };
+  } else {
+    throw new Error(`Cannot refund payment in status: ${paymentIntent.status}`);
+  }
+}
+
+// Create customer for client payments
+export async function createStripeCustomerForClient(
+  email: string,
+  name: string,
+  clientId: string
+) {
+  const customer = await stripe.customers.create({
+    email,
+    name,
+    metadata: {
+      clientId,
+      type: 'client',
+    },
+  });
+
+  return customer;
+}
+
+// Create payment method for customer
+export async function createPaymentMethod(
+  customerId: string,
+  paymentMethodId: string
+) {
+  await stripe.paymentMethods.attach(paymentMethodId, {
+    customer: customerId,
+  });
+
+  // Set as default payment method
+  await stripe.customers.update(customerId, {
+    invoice_settings: {
+      default_payment_method: paymentMethodId,
+    },
+  });
+}
+
+// Get payment methods for customer
+export async function getCustomerPaymentMethods(customerId: string) {
+  return await stripe.paymentMethods.list({
+    customer: customerId,
+    type: 'card',
+  });
+}
+
+// Create Express Dashboard login link
+export async function createExpressDashboardLink(connectAccountId: string) {
+  const link = await stripe.accounts.createLoginLink(connectAccountId);
+  return link;
 }
 
 // Refund payment

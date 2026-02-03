@@ -88,9 +88,7 @@ export const signUpSchema = z.object({
   email: emailValidation,
   password: z.string().min(8, 'Password must be at least 8 characters'),
   fullName: z.string().min(2, 'Full name must be at least 2 characters').max(100, 'Full name is too long'),
-  role: z.enum(['client', 'freelancer'], {
-    errorMap: () => ({ message: 'Role must be either client or freelancer' }),
-  }),
+  role: z.enum(['client', 'freelancer']),
   // Freelancer specific fields
   username: z.string().min(3, 'Username must be at least 3 characters').max(50).optional(),
   skills: z.array(z.string()).max(20, 'Maximum 20 skills allowed').optional(),

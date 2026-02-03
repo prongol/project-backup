@@ -4,7 +4,6 @@ import {
   signUpSchema,
   createJobSchema,
   createProposalSchema,
-  emailSchema,
 } from './validations';
 
 describe('Validation Schemas', () => {

@@ -1,259 +1,311 @@
 "use client"
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CreditCard, Plus, Trash2, DollarSign, Calendar, Download, Filter, CheckCircle2, AlertCircle } from "lucide-react";
+import { CreditCard, Plus, Trash2, DollarSign, Calendar, Download, Filter, CheckCircle2, AlertCircle, Loader2, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
+
+interface StripeAccount {
+  connected: boolean;
+  accountId?: string;
+  chargesEnabled?: boolean;
+  payoutsEnabled?: boolean;
+  detailsSubmitted?: boolean;
+  balance?: {
+    available: Array<{ amount: number; currency: string }>;
+    pending: Array<{ amount: number; currency: string }>;
+  };
+  email?: string;
+  country?: string;
+}
+
+interface Transaction {
+  id: string;
+  type: string;
+  amount: number;
+  description: string;
+  date: string;
+  status: string;
+  arrivalDate?: string;
+  metadata?: any;
+}
 
 export default function PaymentInformation() {
   const { user } = useAuth();
-  const [isAddingCard, setIsAddingCard] = useState(false);
-
-  // Payment methods (for clients)
-  const [paymentMethods, setPaymentMethods] = useState([
-    {
-      id: 1,
-      type: "Visa",
-      last4: "4242",
-      expiry: "12/25",
-      isDefault: true
-    },
-    {
-      id: 2,
-      type: "Mastercard",
-      last4: "5555",
-      expiry: "08/24",
-      isDefault: false
-    }
-  ]);
-
-  // Bank details (for freelancers)
-  const [bankDetails] = useState({
-    accountName: "John Doe",
-    accountNumber: "****1234",
-    bankName: "Standard Bank",
-    swiftCode: "SWIFT123",
-    verified: true
-  });
-
-  // Withdrawal settings (for freelancers)
-  const [withdrawalSettings, setWithdrawalSettings] = useState({
-    minimumBalance: 50,
-    autoWithdraw: false,
-    autoWithdrawThreshold: 100
-  });
-
-  // Transaction history with filters
+  const [loading, setLoading] = useState(true);
+  const [stripeAccount, setStripeAccount] = useState<StripeAccount>({ connected: false });
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionFilter, setTransactionFilter] = useState("all");
-  const [transactions] = useState([
-    {
-      id: 1,
-      type: user?.role === 'freelancer' ? 'payment_received' : 'payment_sent',
-      amount: 350.00,
-      description: user?.role === 'freelancer' ? "Payment for Web Development Project" : "Payment to John Doe",
-      date: "2024-01-15",
-      status: "completed",
-      invoiceId: "INV-001"
-    },
-    {
-      id: 2,
-      type: user?.role === 'freelancer' ? 'withdrawal' : 'payment_sent',
-      amount: 200.00,
-      description: user?.role === 'freelancer' ? "Withdrawal to bank account" : "Payment to Jane Smith",
-      date: "2024-01-14",
-      status: "completed",
-      invoiceId: "INV-002"
-    },
-    {
-      id: 3,
-      type: user?.role === 'freelancer' ? 'payment_received' : 'refund',
-      amount: 450.00,
-      description: user?.role === 'freelancer' ? "Payment for Logo Design" : "Refund for cancelled project",
-      date: "2024-01-12",
-      status: "pending",
-      invoiceId: "INV-003"
-    },
-    {
-      id: 4,
-      type: "fee",
-      amount: -15.50,
-      description: "Platform service fee",
-      date: "2024-01-10",
-      status: "completed",
-      invoiceId: "FEE-001"
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawalAmount, setWithdrawalAmount] = useState("");
+
+  useEffect(() => {
+    if (user?.role === 'freelancer') {
+      fetchStripeAccount();
+      fetchTransactions();
+    } else {
+      setLoading(false);
     }
-  ]);
+  }, [user]);
+
+  const fetchStripeAccount = async () => {
+    try {
+      const response = await fetch('/api/stripe/connect');
+      const data = await response.json();
+      setStripeAccount(data);
+    } catch (error) {
+      console.error('Error fetching Stripe account:', error);
+      toast.error('Failed to load payment information');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTransactions = async () => {
+    try {
+      const response = await fetch('/api/stripe/transactions?limit=20');
+      const data = await response.json();
+      setTransactions(data.transactions || []);
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+    }
+  };
+
+  const handleConnectStripe = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/stripe/connect', { method: 'POST' });
+      const data = await response.json();
+
+      if (data.url) {
+        // Redirect to Stripe Connect onboarding
+        window.location.href = data.url;
+      } else {
+        toast.error('Failed to initialize Stripe Connect');
+      }
+    } catch (error) {
+      console.error('Error connecting Stripe:', error);
+      toast.error('Failed to connect Stripe account');
+      setLoading(false);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    const amount = parseFloat(withdrawalAmount);
+    
+    if (!amount || amount < 50) {
+      toast.error('Minimum withdrawal amount is $50');
+      return;
+    }
+
+    const availableBalance = stripeAccount.balance?.available.reduce((sum, b) => sum + b.amount, 0) || 0;
+    
+    if (amount * 100 > availableBalance) {
+      toast.error('Insufficient balance');
+      return;
+    }
+
+    setWithdrawing(true);
+    try {
+      const response = await fetch('/api/stripe/payout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast.success(`Withdrawal of $${amount} initiated successfully!`);
+        setWithdrawalAmount("");
+        await fetchStripeAccount();
+        await fetchTransactions();
+      } else {
+        toast.error(data.error || 'Failed to process withdrawal');
+      }
+    } catch (error) {
+      console.error('Withdrawal error:', error);
+      toast.error('Failed to process withdrawal');
+    } finally {
+      setWithdrawing(false);
+    }
+  };
 
   const filteredTransactions = transactions.filter(transaction => {
     if (transactionFilter === "all") return true;
     return transaction.type === transactionFilter;
   });
 
-  const handleAddCard = () => {
-    setIsAddingCard(true);
+  const getAvailableBalance = () => {
+    if (!stripeAccount.balance?.available) return 0;
+    return stripeAccount.balance.available.reduce((sum, b) => sum + b.amount, 0) / 100;
   };
 
-  const handleDeleteCard = (cardId: number) => {
-    if (confirm("Are you sure you want to remove this payment method?")) {
-      setPaymentMethods(paymentMethods.filter(card => card.id !== cardId));
-    }
+  const getPendingBalance = () => {
+    if (!stripeAccount.balance?.pending) return 0;
+    return stripeAccount.balance.pending.reduce((sum, b) => sum + b.amount, 0) / 100;
   };
 
-  const handleSetDefaultCard = (cardId: number) => {
-    setPaymentMethods(paymentMethods.map(card => ({
-      ...card,
-      isDefault: card.id === cardId
-    })));
-  };
-
-  const handleWithdraw = () => {
-    // TODO: Implement withdrawal
-    alert("Withdrawal request submitted");
-  };
-
-  const downloadInvoice = (invoiceId: string) => {
-    // TODO: Implement invoice download
-    alert(`Downloading invoice ${invoiceId}`);
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* For Freelancers - Bank Account Details */}
+      {/* For Freelancers - Stripe Connect */}
       {user?.role === 'freelancer' && (
         <>
-          {/* Bank Details */}
-          <Card className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-gray-900">Bank Account</h2>
-              {bankDetails.verified ? (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 text-green-700 rounded-full">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span className="text-sm font-medium">Verified</span>
+          {!stripeAccount.connected ? (
+            /* Stripe Connect Onboarding */
+            <Card className="p-8 text-center">
+              <div className="max-w-md mx-auto">
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CreditCard className="w-8 h-8 text-blue-600" />
                 </div>
-              ) : (
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full">
-                  <AlertCircle className="w-4 h-4" />
-                  <span className="text-sm font-medium">Pending Verification</span>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Account Holder Name
-                  </label>
-                  <p className="px-3 py-2 bg-gray-50 rounded-lg text-gray-900">
-                    {bankDetails.accountName}
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Account Number
-                  </label>
-                  <p className="px-3 py-2 bg-gray-50 rounded-lg text-gray-900 font-mono">
-                    {bankDetails.accountNumber}
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Bank Name
-                  </label>
-                  <p className="px-3 py-2 bg-gray-50 rounded-lg text-gray-900">
-                    {bankDetails.bankName}
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    SWIFT/BIC Code
-                  </label>
-                  <p className="px-3 py-2 bg-gray-50 rounded-lg text-gray-900 font-mono">
-                    {bankDetails.swiftCode}
-                  </p>
-                </div>
-              </div>
-
-              <Button variant="outline">Edit Bank Details</Button>
-            </div>
-          </Card>
-
-          {/* Withdrawal Settings */}
-          <Card className="p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">Withdrawal Settings</h2>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                <div className="flex-1">
-                  <h3 className="font-medium text-gray-900 mb-1">Available Balance</h3>
-                  <p className="text-3xl font-bold text-gray-900">$1,250.00</p>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Minimum withdrawal: ${withdrawalSettings.minimumBalance}
-                  </p>
-                </div>
-                <Button onClick={handleWithdraw} className="bg-foreground hover:bg-gray-800">
-                  <DollarSign className="w-4 h-4 mr-2" />
-                  Withdraw
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Connect Your Bank Account</h2>
+                <p className="text-gray-600 mb-6">
+                  Connect your bank account with Stripe to receive payments securely and get paid faster.
+                </p>
+                <Button 
+                  onClick={handleConnectStripe}
+                  size="lg"
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  Connect with Stripe
                 </Button>
+                <p className="text-sm text-gray-500 mt-4">
+                  Powered by Stripe • Secure and encrypted
+                </p>
               </div>
-
-              <div className="flex items-center justify-between py-3 border-b border-gray-200">
-                <div>
-                  <h3 className="font-medium text-gray-900">Auto Withdrawal</h3>
-                  <p className="text-sm text-gray-500">Automatically withdraw when balance reaches threshold</p>
+            </Card>
+          ) : (
+            <>
+              {/* Stripe Account Status */}
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold text-gray-900">Stripe Account</h2>
+                  {stripeAccount.detailsSubmitted ? (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 text-green-700 rounded-full">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span className="text-sm font-medium">Connected</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-full">
+                      <AlertCircle className="w-4 h-4" />
+                      <span className="text-sm font-medium">Setup Incomplete</span>
+                    </div>
+                  )}
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    className="sr-only peer" 
-                    checked={withdrawalSettings.autoWithdraw}
-                    onChange={(e) => setWithdrawalSettings({...withdrawalSettings, autoWithdraw: e.target.checked})}
-                  />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-[#0CF574]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0CF574]"></div>
-                </label>
-              </div>
 
-              {withdrawalSettings.autoWithdraw && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Auto Withdrawal Threshold (USD)
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
-                    <input
-                      type="number"
-                      value={withdrawalSettings.autoWithdrawThreshold}
-                      onChange={(e) => setWithdrawalSettings({...withdrawalSettings, autoWithdrawThreshold: Number(e.target.value)})}
-                      min={withdrawalSettings.minimumBalance}
-                      className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0CF574] focus:border-transparent"
-                    />
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                      <p className="text-sm text-gray-600 mb-1">Account ID</p>
+                      <p className="font-mono text-sm">{stripeAccount.accountId}</p>
+                    </div>
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                      <p className="text-sm text-gray-600 mb-1">Email</p>
+                      <p className="text-sm">{stripeAccount.email || 'Not set'}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">Charges Enabled</p>
+                      <p className="font-medium">{stripeAccount.chargesEnabled ? '✓ Yes' : '✗ No'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">Payouts Enabled</p>
+                      <p className="font-medium">{stripeAccount.payoutsEnabled ? '✓ Yes' : '✗ No'}</p>
+                    </div>
+                  </div>
+
+                  {!stripeAccount.detailsSubmitted && (
+                    <Button onClick={handleConnectStripe} variant="outline" className="w-full">
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Complete Stripe Setup
+                    </Button>
+                  )}
+                </div>
+              </Card>
+
+              {/* Withdrawal Settings */}
+              <Card className="p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-6">Withdraw Funds</h2>
+                
+                <div className="space-y-6">
+                  {/* Balance Display */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-6 border-2 border-green-200 bg-green-50 rounded-lg">
+                      <h3 className="text-sm font-medium text-green-800 mb-1">Available Balance</h3>
+                      <p className="text-3xl font-bold text-green-900">${getAvailableBalance().toFixed(2)}</p>
+                      <p className="text-xs text-green-700 mt-1">Ready to withdraw</p>
+                    </div>
+                    <div className="p-6 border-2 border-blue-200 bg-blue-50 rounded-lg">
+                      <h3 className="text-sm font-medium text-blue-800 mb-1">Pending Balance</h3>
+                      <p className="text-3xl font-bold text-blue-900">${getPendingBalance().toFixed(2)}</p>
+                      <p className="text-xs text-blue-700 mt-1">Processing</p>
+                    </div>
+                  </div>
+
+                  {/* Withdrawal Form */}
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Withdrawal Amount (USD)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">$</span>
+                        <input
+                          type="number"
+                          value={withdrawalAmount}
+                          onChange={(e) => setWithdrawalAmount(e.target.value)}
+                          min={50}
+                          max={getAvailableBalance()}
+                          step={0.01}
+                          placeholder="50.00"
+                          className="w-full pl-8 pr-3 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg font-semibold"
+                        />
+                      </div>
+                      <p className="text-sm text-gray-600 mt-2">
+                        Minimum: $50.00 • Maximum: ${getAvailableBalance().toFixed(2)}
+                      </p>
+                    </div>
+
+                    <Button 
+                      onClick={handleWithdraw} 
+                      disabled={withdrawing || !stripeAccount.payoutsEnabled || getAvailableBalance() < 50}
+                      className="w-full bg-blue-600 hover:bg-blue-700"
+                      size="lg"
+                    >
+                      {withdrawing ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <DollarSign className="w-4 h-4 mr-2" />
+                          Withdraw to Bank
+                        </>
+                      )}
+                    </Button>
+
+                    <p className="text-xs text-gray-500 text-center">
+                      Funds typically arrive in 2-3 business days
+                    </p>
                   </div>
                 </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Minimum Withdrawal Amount (USD)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
-                  <input
-                    type="number"
-                    value={withdrawalSettings.minimumBalance}
-                    onChange={(e) => setWithdrawalSettings({...withdrawalSettings, minimumBalance: Number(e.target.value)})}
-                    min={1}
-                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0CF574] focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <Button className="bg-foreground hover:bg-gray-800">Save Settings</Button>
-            </div>
-          </Card>
+              </Card>
+            </>
+          )}
         </>
       )}
 

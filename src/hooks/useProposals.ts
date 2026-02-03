@@ -22,8 +22,6 @@ export function useProposals(filters?: {
       const response = await fetch(`/api/proposals?${params.toString()}`, {
         credentials: 'include'
       });
-        credentials: 'include'
-      });
       if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Failed to fetch proposals');

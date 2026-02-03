@@ -20,7 +20,7 @@ export function AvatarUpload({ userId, currentAvatarUrl, onUploadComplete }: Ava
     if (!file) return;
 
     // Validate file
-    const validation = validateFile(file, FILE_SIZE_LIMITS.AVATAR, ALLOWED_FILE_TYPES.IMAGE);
+    const validation = validateFile(file, FILE_SIZE_LIMITS.AVATAR, ALLOWED_FILE_TYPES.IMAGE as any);
     if (!validation.valid) {
       toast.error(validation.error);
       return;

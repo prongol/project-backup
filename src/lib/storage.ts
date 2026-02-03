@@ -105,7 +105,7 @@ export async function uploadAvatar(file: File, userId: string): Promise<UploadRe
   }
 
   // Validate file type
-  if (!ALLOWED_FILE_TYPES.IMAGE.includes(file.type)) {
+  if (!ALLOWED_FILE_TYPES.IMAGE.includes(file.type as any)) {
     return { success: false, error: 'Invalid file type. Only images are allowed.' };
   }
 
@@ -131,7 +131,7 @@ export async function uploadPortfolioImage(
   }
 
   // Validate file type
-  if (!ALLOWED_FILE_TYPES.IMAGE.includes(file.type)) {
+  if (!ALLOWED_FILE_TYPES.IMAGE.includes(file.type as any)) {
     return { success: false, error: 'Invalid file type. Only images are allowed.' };
   }
 
@@ -157,7 +157,7 @@ export async function uploadDocument(
 
   // Validate file type
   const allowedTypes = [...ALLOWED_FILE_TYPES.DOCUMENT, ...ALLOWED_FILE_TYPES.IMAGE];
-  if (!allowedTypes.includes(file.type)) {
+  if (!allowedTypes.includes(file.type as any)) {
     return { success: false, error: 'Invalid file type.' };
   }
 

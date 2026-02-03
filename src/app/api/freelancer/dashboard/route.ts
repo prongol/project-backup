@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
       if (!newFreelancer) {
         throw new Error('Failed to create freelancer record');
       }
-      freelancerData.id = newFreelancer.id;
+      freelancerData!.id = newFreelancer.id;
     }
 
     // Get stats in parallel
@@ -56,25 +56,25 @@ export async function GET(request: NextRequest) {
       supabase
         .from('contracts')
         .select('*', { count: 'exact', head: true })
-        .eq('freelancer_id', freelancerData.id)
+        .eq('freelancer_id', freelancerData?.id || '')
         .eq('status', 'active'),
       
       supabase
         .from('contracts')
         .select('*', { count: 'exact', head: true })
-        .eq('freelancer_id', freelancerData.id)
+        .eq('freelancer_id', freelancerData?.id || '')
         .eq('status', 'completed'),
       
       supabase
         .from('proposals')
         .select('*', { count: 'exact', head: true })
-        .eq('freelancer_id', freelancerData.id)
+        .eq('freelancer_id', freelancerData?.id || '')
         .eq('status', 'pending'),
       
       supabase
         .from('contracts')
         .select('total_amount')
-        .eq('freelancer_id', freelancerData.id)
+        .eq('freelancer_id', freelancerData?.id || '')
         .eq('status', 'completed')
     ]);
 
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
         client:client_id(profile_id, profiles!inner(full_name, avatar_url)),
         job:job_id(title, category)
       `)
-      .eq('freelancer_id', freelancerData.id)
+      .eq('freelancer_id', freelancerData?.id || '')
       .order('created_at', { ascending: false })
       .limit(5);
 
