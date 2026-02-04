@@ -7,7 +7,8 @@ export async function middleware(request: NextRequest) {
   const isPublicRoute = publicRoutes.some(route => 
     request.nextUrl.pathname === route || 
     request.nextUrl.pathname.startsWith('/api/auth') ||
-    request.nextUrl.pathname.startsWith('/auth/')
+    request.nextUrl.pathname.startsWith('/auth/') ||
+    request.nextUrl.pathname.startsWith('/api/cron')
   )
   const isPublicApi = request.nextUrl.pathname.startsWith('/api/jobs') && request.method === 'GET'
   

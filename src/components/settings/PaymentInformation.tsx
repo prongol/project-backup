@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CreditCard, Plus, Trash2, DollarSign, Calendar, Download, Filter, CheckCircle2, AlertCircle, Loader2, ExternalLink } from "lucide-react";
+import { CreditCard, Plus, Trash2, Calendar, Download, Filter, CheckCircle2, AlertCircle, Loader2, ExternalLink, ArrowUpRight, ArrowDownLeft } from "lucide-react";
 import { toast } from "sonner";
 
 interface StripeAccount {
@@ -38,13 +38,18 @@ export default function PaymentInformation() {
   const [stripeAccount, setStripeAccount] = useState<StripeAccount>({ connected: false });
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [transactionFilter, setTransactionFilter] = useState("all");
-  const [withdrawing, setWithdrawing] = useState(false);
-  const [withdrawalAmount, setWithdrawalAmount] = useState("");
+
+  // Client payment methods state
+  const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
+  const [connectingStripe, setConnectingStripe] = useState(false);
 
   useEffect(() => {
     if (user?.role === 'freelancer') {
       fetchStripeAccount();
       fetchTransactions();
+    } else if (user?.role === 'client') {
+      fetchPaymentMethods();
+      setLoading(false);
     } else {
       setLoading(false);
     }
@@ -92,44 +97,37 @@ export default function PaymentInformation() {
     }
   };
 
-  const handleWithdraw = async () => {
-    const amount = parseFloat(withdrawalAmount);
-    
-    if (!amount || amount < 50) {
-      toast.error('Minimum withdrawal amount is $50');
-      return;
-    }
-
-    const availableBalance = stripeAccount.balance?.available.reduce((sum, b) => sum + b.amount, 0) || 0;
-    
-    if (amount * 100 > availableBalance) {
-      toast.error('Insufficient balance');
-      return;
-    }
-
-    setWithdrawing(true);
+  // Client payment methods functions
+  const fetchPaymentMethods = async () => {
     try {
-      const response = await fetch('/api/stripe/payout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount }),
-      });
+      setLoading(true);
+      const response = await fetch('/api/stripe/payment-method');
+      const data = await response.json();
+      setPaymentMethods(data.paymentMethods || []);
+    } catch (error) {
+      console.error('Error fetching payment methods:', error);
+      toast.error('Failed to load payment methods');
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  const handleManagePaymentMethods = async () => {
+    try {
+      setConnectingStripe(true);
+      const response = await fetch('/api/stripe/customer-portal', { method: 'POST' });
       const data = await response.json();
 
-      if (response.ok) {
-        toast.success(`Withdrawal of $${amount} initiated successfully!`);
-        setWithdrawalAmount("");
-        await fetchStripeAccount();
-        await fetchTransactions();
+      if (data.url) {
+        // Redirect to Stripe Customer Portal
+        window.location.href = data.url;
       } else {
-        toast.error(data.error || 'Failed to process withdrawal');
+        toast.error('Failed to open payment management portal');
       }
     } catch (error) {
-      console.error('Withdrawal error:', error);
-      toast.error('Failed to process withdrawal');
-    } finally {
-      setWithdrawing(false);
+      console.error('Error opening Stripe portal:', error);
+      toast.error('Failed to connect to Stripe');
+      setConnectingStripe(false);
     }
   };
 
@@ -277,165 +275,110 @@ export default function PaymentInformation() {
                       <p className="text-sm text-gray-600 mt-2">
                         Minimum: $50.00 • Maximum: ${getAvailableBalance().toFixed(2)}
                       </p>
+                  Balance Display - Auto-transferred by Stripe */}
+              <Card className="p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-6">Balance & Payouts</h2>
+                
+                <div className="space-y-6">
+                  {/* Balance Display */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-6 border-2 border-green-200 bg-green-50 rounded-lg">
+                      <h3 className="text-sm font-medium text-green-800 mb-1">Available Balance</h3>
+                      <p className="text-3xl font-bold text-green-900">${getAvailableBalance().toFixed(2)}</p>
+                      <p className="text-xs text-green-700 mt-1">Auto-transferred to bank</p>
                     </div>
-
-                    <Button 
-                      onClick={handleWithdraw} 
-                      disabled={withdrawing || !stripeAccount.payoutsEnabled || getAvailableBalance() < 50}
-                      className="w-full bg-blue-600 hover:bg-blue-700"
-                      size="lg"
-                    >
-                      {withdrawing ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          <DollarSign className="w-4 h-4 mr-2" />
-                          Withdraw to Bank
-                        </>
-                      )}
-                    </Button>
-
-                    <p className="text-xs text-gray-500 text-center">
-                      Funds typically arrive in 2-3 business days
-                    </p>
+                    <div className="p-6 border-2 border-blue-200 bg-blue-50 rounded-lg">
+                      <h3 className="text-sm font-medium text-blue-800 mb-1">Pending Balance</h3>
+                      <p className="text-3xl font-bold text-blue-900">${getPendingBalance().toFixed(2)}</p>
+                      <p className="text-xs text-blue-700 mt-1">Processing</p>
+                    </div>
                   </div>
-                </div>
-              </Card>
-            </>
+
+                  {/* Auto-Payout Info */}
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <h4 className="font-semibold text-blue-900 mb-1">Automatic Payouts Enabled</h4>
+                        <p className="text-sm text-blue-800">
+                          Stripe automatically transfers your earnings to your bank account within 2 business days after each payment release. 
+                          No manual withdrawal needed!
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg">
+                    <Calendar className="w-5 h-5 text-gray-600" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Payout Schedule</p>
+                      <p className="text-sm text-gray-600">Daily automatic transfers (2 business days)</p>
+                    </divsName="text-sm text-gray-500 mt-4">
+                  Powered by Stripe • Secure and encrypted
+                </p>
+              </div>
+            </Card>
+          ) : (
+            /* Has Payment Methods */
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-gray-900">Payment Methods</h2>
+                <Button 
+                  onClick={handleManagePaymentMethods}
+                  disabled={connectingStripe}
+                  variant="outline"
+                >
+                  {connectingStripe ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Manage with Stripe
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              <div className="space-y-4">
+                {paymentMethods.map((method) => (
+                  <div 
+                    key={method.id}
+                    className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg"
+                  >
+                    <div className="p-3 bg-gray-100 rounded-lg">
+                      <CreditCard className="w-6 h-6 text-gray-600" />
+                    </div>
+                    
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-medium text-gray-900">
+                          {method.card?.brand?.toUpperCase() || 'Card'} •••• {method.card?.last4}
+                        </h3>
+                        {method.isDefault && (
+                          <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded">
+                            Default
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600">
+                        Expires {method.card?.exp_month}/{method.card?.exp_year}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> Click "Manage with Stripe" to add, remove, or set default payment methods in Stripe's secure portal.
+                </p>
+              </div>
+            </Card>
           )}
         </>
-      )}
-
-      {/* For Clients - Payment Methods */}
-      {user?.role === 'client' && (
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-gray-900">Payment Methods</h2>
-            <Button onClick={handleAddCard} variant="outline">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Card
-            </Button>
-          </div>
-
-          <div className="space-y-4">
-            {paymentMethods.map((method) => (
-              <div 
-                key={method.id}
-                className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg"
-              >
-                <div className="p-3 bg-gray-100 rounded-lg">
-                  <CreditCard className="w-6 h-6 text-gray-600" />
-                </div>
-                
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-medium text-gray-900">
-                      {method.type} •••• {method.last4}
-                    </h3>
-                    {method.isDefault && (
-                      <span className="px-2 py-0.5 bg-[#0CF574]/20 text-xs font-medium rounded">
-                        Default
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-600">Expires {method.expiry}</p>
-                </div>
-
-                <div className="flex gap-2">
-                  {!method.isDefault && (
-                    <Button 
-                      onClick={() => handleSetDefaultCard(method.id)}
-                      variant="outline" 
-                      size="sm"
-                    >
-                      Set Default
-                    </Button>
-                  )}
-                  <Button 
-                    onClick={() => handleDeleteCard(method.id)}
-                    variant="outline" 
-                    size="sm"
-                    className="text-red-600 border-red-600 hover:bg-red-50"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Add Card Form */}
-          {isAddingCard && (
-            <div className="mt-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
-              <h3 className="font-medium text-gray-900 mb-4">Add New Card</h3>
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Card Number
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="1234 5678 9012 3456"
-                    maxLength={19}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0CF574] focus:border-transparent"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Expiry Date
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="MM/YY"
-                      maxLength={5}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0CF574] focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      CVV
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="123"
-                      maxLength={4}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0CF574] focus:border-transparent"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Cardholder Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="John Doe"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#0CF574] focus:border-transparent"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input type="checkbox" id="setDefault" className="rounded" />
-                  <label htmlFor="setDefault" className="text-sm text-gray-700">
-                    Set as default payment method
-                  </label>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button className="bg-foreground hover:bg-gray-800">Add Card</Button>
-                  <Button onClick={() => setIsAddingCard(false)} variant="outline">Cancel</Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </Card>
       )}
 
       {/* Transaction History (for both) */}
@@ -478,11 +421,13 @@ export default function PaymentInformation() {
                 transaction.status === 'pending' ? 'bg-yellow-100' : 
                 'bg-green-100'
               }`}>
-                <DollarSign className={`w-5 h-5 ${
-                  transaction.amount < 0 ? 'text-red-600' : 
-                  transaction.status === 'pending' ? 'text-yellow-600' : 
-                  'text-green-600'
-                }`} />
+                {transaction.amount < 0 ? (
+                  <ArrowUpRight className="w-5 h-5 text-red-600" />
+                ) : (
+                  <ArrowDownLeft className={`w-5 h-5 ${
+                    transaction.status === 'pending' ? 'text-yellow-600' : 'text-green-600'
+                  }`} />
+                )}
               </div>
 
               <div className="flex-1">

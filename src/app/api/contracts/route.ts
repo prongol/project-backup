@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { EmailNotifications } from '@/lib/notificationEmails';
+import { stripe } from '@/lib/stripe';
 
 // GET /api/contracts - Get all contracts for the authenticated user
 export async function GET(request: Request) {
@@ -225,6 +226,90 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: contractError.message },
         { status: 500 }
+      );
+    }
+
+    // CHARGE CLIENT IMMEDIATELY - Hold payment in escrow
+    try {
+      // Get client's Stripe customer ID
+      const { data: clientStripe } = await supabase
+        .from('clients')
+        .select('stripe_customer_id')
+        .eq('id', clientData.id)
+        .single();
+
+      if (!clientStripe?.stripe_customer_id) {
+        // Rollback contract creation
+        await supabase.from('contracts').delete().eq('id', contract.id);
+        return NextResponse.json(
+          { error: 'Please add a payment method before creating contracts' },
+          { status: 400 }
+        );
+      }
+
+      // Calculate amounts
+      const platformFeePercentage = parseFloat(process.env.STRIPE_PLATFORM_FEE_PERCENTAGE || '7');
+      const totalAmount = parseFloat(total_amount);
+      const platformFee = (totalAmount * platformFeePercentage) / 100;
+      const freelancerAmount = totalAmount - platformFee;
+
+      // Get customer's payment methods
+      const paymentMethods = await stripe.paymentMethods.list({
+        customer: clientStripe.stripe_customer_id,
+        type: 'card',
+        limit: 1,
+      });
+
+      if (!paymentMethods.data || paymentMethods.data.length === 0) {
+        // Rollback contract creation
+        await supabase.from('contracts').delete().eq('id', contract.id);
+        return NextResponse.json(
+          { error: 'No payment method found. Please add a payment method first.' },
+          { status: 400 }
+        );
+      }
+
+      const paymentMethodId = paymentMethods.data[0].id;
+
+      // Create Payment Intent with manual capture (escrow)
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: Math.round(totalAmount * 100), // Convert to cents
+        currency: 'usd',
+        customer: clientStripe.stripe_customer_id,
+        payment_method: paymentMethodId,
+        confirm: true, // Charge immediately
+        capture_method: 'manual', // Hold funds in escrow - don't capture yet
+        off_session: true, // Allow charging without customer present
+        payment_method_types: ['card'], // Only accept cards (no redirects)
+        metadata: {
+          contract_id: contract.id,
+          job_id,
+          freelancer_id,
+          platform_fee: platformFee.toFixed(2),
+          freelancer_amount: freelancerAmount.toFixed(2),
+        },
+      });
+
+      // Update contract with payment info
+      await supabase
+        .from('contracts')
+        .update({
+          stripe_payment_intent_id: paymentIntent.id,
+          payment_status: 'held',
+          payment_amount: totalAmount,
+          platform_fee: platformFee,
+          freelancer_amount: freelancerAmount,
+          paid_at: new Date().toISOString(),
+        })
+        .eq('id', contract.id);
+
+    } catch (paymentError: any) {
+      console.error('Payment error:', paymentError);
+      // Rollback contract creation
+      await supabase.from('contracts').delete().eq('id', contract.id);
+      return NextResponse.json(
+        { error: `Payment failed: ${paymentError.message}` },
+        { status: 400 }
       );
     }
 

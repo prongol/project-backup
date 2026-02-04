@@ -131,7 +131,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const clientProfileId = job.clients?.[0]?.profile_id;
+    const clientProfileId = job.clients?.profile_id;
     if (!clientProfileId) {
       return NextResponse.json(
         { error: 'Client profile not found' },

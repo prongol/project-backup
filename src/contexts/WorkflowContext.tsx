@@ -187,10 +187,12 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     if (!user) return false;
     
     try {
-      const response = await fetch(`/api/users/${user.id}/bank-details/check`);
+      // Check Stripe Connect account status for freelancers
+      const response = await fetch('/api/stripe/connect');
       if (response.ok) {
         const data = await response.json();
-        const isComplete = data.isComplete;
+        // Consider complete if Stripe account exists and is verified
+        const isComplete = data.account?.details_submitted || false;
         setState(prev => ({ ...prev, isBankDetailsCompleted: isComplete }));
         return isComplete;
       }

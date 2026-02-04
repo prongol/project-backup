@@ -126,7 +126,10 @@ export async function GET(request: NextRequest) {
       .single();
 
     if (!freelancer?.stripe_account_id) {
-      return NextResponse.json({ connected: false });
+      return NextResponse.json({ 
+        connected: false,
+        account: null
+      });
     }
 
     // Get account details from Stripe
@@ -143,12 +146,18 @@ export async function GET(request: NextRequest) {
       chargesEnabled: account.charges_enabled,
       payoutsEnabled: account.payouts_enabled,
       detailsSubmitted: account.details_submitted,
+      account: {
+        id: account.id,
+        charges_enabled: account.charges_enabled,
+        payouts_enabled: account.payouts_enabled,
+        details_submitted: account.details_submitted,
+        email: account.email,
+        country: account.country,
+      },
       balance: {
         available: balance.available,
         pending: balance.pending,
       },
-      email: account.email,
-      country: account.country,
     });
 
   } catch (error: any) {

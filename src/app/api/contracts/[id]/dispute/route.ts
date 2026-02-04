@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-// POST /api/contracts/[id]/dispute - Create a dispute
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+// POST /api/contracts/[id]/dispute - Create a dispute and pause auto-release timer
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       );
     }
 
-    const { id: contractId } = params;
+    const { id: contractId } = await params;
     const { disputeType, reason, evidence, amountDisputed } = await req.json();
 
     // Verify contract and user authorization
@@ -101,21 +101,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         .insert(verificationRecords);
     }
 
-    // Update contract status
+    // Update contract status and PAUSE auto-release timer
     await supabase
       .from('contracts')
       .update({
-        status: 'disputed'
+        status: 'disputed',
+        dispute_reason: reason,
+        disputed_at: new Date().toISOString(),
+        dispute_status: 'under_review',
+        auto_release_at: null, // Clear auto-release timer
+        payment_status: 'disputed' // Hold payment
       })
       .eq('id', contractId);
-
-    // Update escrow status to hold funds
-    await supabase
-      .from('escrow_accounts')
-      .update({
-        status: 'disputed'
-      })
-      .eq('contract_id', contractId);
 
     // Notify the other party
     const otherPartyId = isClient ? contract.freelancers[0]?.profile_id : contract.clients[0]?.profile_id;

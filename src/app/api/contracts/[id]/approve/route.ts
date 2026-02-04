@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-// POST /api/contracts/[id]/approve - Approve completed work and release payment (client)
+// Auto-release delay: 1 minute for test, 3 days for production
+const AUTO_RELEASE_DELAY_MS = process.env.NODE_ENV === 'production' ? 3 * 24 * 60 * 60 * 1000 : 60 * 1000;
+
+// POST /api/contracts/[id]/approve - Client approves work, starts auto-release timer
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient();
@@ -17,9 +20,9 @@ export async function POST(
       );
     }
 
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
-    const { approval_note, rating, review } = body;
+    const { approval_note } = body;
 
     // Get the contract
     const { data: contract, error: contractError } = await supabase
@@ -28,16 +31,11 @@ export async function POST(
         *,
         freelancer:freelancer_id (
           id,
-          profile_id,
-          total_earned,
-          completed_jobs,
-          rating,
-          total_reviews
+          profile_id
         ),
         client:client_id (
           id,
-          profile_id,
-          total_spent
+          profile_id
         )
       `)
       .eq('id', id)
@@ -67,22 +65,16 @@ export async function POST(
     }
 
     const now = new Date().toISOString();
+    const autoReleaseAt = new Date(Date.now() + AUTO_RELEASE_DELAY_MS).toISOString();
 
-    // Calculate platform fee (7%)
-    const platformFeePercentage = 7.00;
-    const platformFeeAmount = (contract.total_amount * platformFeePercentage) / 100;
-    const freelancerNetAmount = contract.total_amount - platformFeeAmount;
-
-    // Update contract to completed status
+    // Update contract - set status to 'approved' and start auto-release timer
     const { error: updateError } = await supabase
       .from('contracts')
       .update({
-        status: 'completed',
+        status: 'approved',
         approval_note,
-        payment_released_at: now,
-        platform_fee_percentage: platformFeePercentage,
-        platform_fee_amount: platformFeeAmount,
-        freelancer_net_amount: freelancerNetAmount,
+        auto_release_at: autoReleaseAt,
+        payment_status: 'approved', // Mark payment as approved (waiting for release)
         updated_at: now
       })
       .eq('id', id);
@@ -95,92 +87,27 @@ export async function POST(
       );
     }
 
-    // Record platform transaction
-    await supabase
-      .from('platform_transactions')
-      .insert({
-        contract_id: id,
-        transaction_type: 'contract_payment',
-        client_id: contract.client_id,
-        freelancer_id: contract.freelancer_id,
-        gross_amount: contract.total_amount,
-        platform_fee_amount: platformFeeAmount,
-        freelancer_net_amount: freelancerNetAmount,
-        platform_fee_percentage: platformFeePercentage,
-        payment_status: 'completed',
-        payment_method: 'bank_transfer',
-        transaction_date: now,
-        created_at: now
-      });
-
-    // Update freelancer stats (they receive net amount after platform fee)
-    const newTotalEarned = (contract.freelancer.total_earned || 0) + freelancerNetAmount;
-    const newCompletedJobs = (contract.freelancer.completed_jobs || 0) + 1;
+    const releaseMinutes = AUTO_RELEASE_DELAY_MS / (60 * 1000);
     
-    // Calculate new rating if provided
-    let newRating = contract.freelancer.rating || 0;
-    let newTotalReviews = contract.freelancer.total_reviews || 0;
-    
-    if (rating) {
-      const currentTotal = (contract.freelancer.rating || 0) * (contract.freelancer.total_reviews || 0);
-      newTotalReviews = (contract.freelancer.total_reviews || 0) + 1;
-      newRating = (currentTotal + rating) / newTotalReviews;
-    }
-
-    await supabase
-      .from('freelancers')
-      .update({
-        total_earned: newTotalEarned,
-        completed_jobs: newCompletedJobs,
-        rating: newRating,
-        total_reviews: newTotalReviews,
-        updated_at: now
-      })
-      .eq('id', contract.freelancer_id);
-
-    // Update client stats
-    const newTotalSpent = (contract.client.total_spent || 0) + contract.total_amount;
-    
-    await supabase
-      .from('clients')
-      .update({
-        total_spent: newTotalSpent,
-        updated_at: now
-      })
-      .eq('id', contract.client_id);
-
     // Create notification for freelancer
     await supabase
       .from('notifications')
       .insert({
         user_id: contract.freelancer.profile_id,
-        type: 'payment_released',
-        title: 'Payment Released! 💰',
-        message: `Your work on "${contract.title}" has been approved! You will receive $${freelancerNetAmount.toFixed(2)} (after 7% platform fee) via bank transfer.`,
+        type: 'contract_approved',
+        title: 'Work Approved! ✅',
+        message: `Your work on "${contract.title}" has been approved! Payment will auto-release in ${releaseMinutes} ${releaseMinutes === 1 ? 'minute' : 'minutes'}.`,
         link: `/contracts/${id}`,
         read: false,
         created_at: now,
       });
-
-    // Create review if provided
-    if (rating && review) {
-      await supabase
-        .from('reviews')
-        .insert({
-          contract_id: id,
-          reviewer_id: contract.client_id,
-          reviewee_id: contract.freelancer_id,
-          reviewer_type: 'client',
-          rating,
-          review,
-          created_at: now
-        });
-    }
-
-    return NextResponse.json({ 
+    
+    return NextResponse.json({
       success: true,
-      message: 'Work approved and payment released successfully!'
+      message: `Work approved. Payment will auto-release in ${releaseMinutes} ${releaseMinutes === 1 ? 'minute' : 'minutes'} unless a dispute is filed.`,
+      auto_release_at: autoReleaseAt,
     });
+
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to approve work';
     console.error('Error approving work:', error);
