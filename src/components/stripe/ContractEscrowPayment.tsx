@@ -1,6 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { loadStripe } from '@stripe/stripe-js';
+import {
+  Elements,
+  CardElement,
+  useStripe,
+  useElements,
+} from '@stripe/react-stripe-js';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +17,9 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { AlertTriangle, Check, CreditCard, DollarSign, Info, Loader2, Lock, Shield, Clock } from 'lucide-react';
 import { toast } from 'sonner';
+
+// Initialize Stripe
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '');
 
 interface ContractEscrowPaymentProps {
   contractId: string;
@@ -38,14 +48,13 @@ function PaymentForm({
   requirements,
   onPaymentComplete 
 }: PaymentFormProps) {
+  const stripe = useStripe();
+  const elements = useElements();
   const [loading, setLoading] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('');
   const [useNewCard, setUseNewCard] = useState(false);
   const [clientSecret, setClientSecret] = useState('');
-  const [cardNumber, setCardNumber] = useState('');
-  const [cardExpiry, setCardExpiry] = useState('');
-  const [cardCvc, setCardCvc] = useState('');
 
   const platformFee = amount * 0.07;
   const totalAmount = amount; // Client pays full amount, platform fee deducted from freelancer
@@ -79,7 +88,7 @@ function PaymentForm({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          amount: Math.round(totalAmount * 100), // Convert to cents
+          amount: totalAmount,
           contractId,
           freelancerId
         }),
@@ -101,50 +110,69 @@ function PaymentForm({
   const handlePayment = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!stripe || !elements || !clientSecret) {
+      return;
+    }
+
     setLoading(true);
 
     try {
-      let paymentMethodId = selectedPaymentMethod;
+      let paymentResult;
 
-      // If using new card, we'll send the card details to the server
-      // In production, you would integrate with Stripe Elements properly
-      if (useNewCard || !paymentMethodId) {
-        if (!cardNumber || !cardExpiry || !cardCvc) {
-          throw new Error('Please fill in all card details');
+      if (useNewCard || paymentMethods.length === 0) {
+        const cardElement = elements.getElement(CardElement);
+        if (!cardElement) {
+          throw new Error('Card element not found');
         }
-        // This is a placeholder - in production you'd use Stripe Elements
-        paymentMethodId = 'pm_placeholder';
+
+        // Confirm the payment with the card element
+        // Since capture_method is 'manual', this will only authorize the funds
+        paymentResult = await stripe.confirmCardPayment(clientSecret, {
+          payment_method: {
+            card: cardElement,
+            billing_details: {
+              // You can add more details here if needed
+            },
+          },
+        });
+      } else {
+        // Use existing payment method
+        paymentResult = await stripe.confirmCardPayment(clientSecret, {
+          payment_method: selectedPaymentMethod,
+        });
       }
 
-      // Create escrow payment
-      const response = await fetch('/api/stripe/escrow', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contractId,
-          freelancerId,
-          amount: totalAmount,
-          paymentMethodId,
-          clientSecret,
-          cardDetails: useNewCard ? {
-            number: cardNumber,
-            exp_month: cardExpiry.split('/')[0],
-            exp_year: cardExpiry.split('/')[1],
-            cvc: cardCvc
-          } : null
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Payment failed');
+      if (paymentResult.error) {
+        throw new Error(paymentResult.error.message);
       }
 
-      toast.success('Payment secured in escrow! Freelancer can now start work.');
-      onPaymentComplete?.(data.paymentId);
+      if (paymentResult.paymentIntent?.status === 'requires_capture' || paymentResult.paymentIntent?.status === 'succeeded') {
+        // Now update our database via the escrow API
+        // This makes sure our DB records the payment as authorized/held
+        const response = await fetch('/api/stripe/escrow', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contractId,
+            freelancerId,
+            amount: totalAmount,
+            paymentIntentId: paymentResult.paymentIntent.id,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to record payment in database');
+        }
+
+        toast.success('Payment secured in escrow! Freelancer can now start work.');
+        onPaymentComplete?.(data.paymentId);
+      } else {
+        throw new Error(`Unexpected payment status: ${paymentResult.paymentIntent?.status}`);
+      }
 
     } catch (error: any) {
       console.error('Payment error:', error);
@@ -247,48 +275,147 @@ function PaymentForm({
         </div>
 
         {(useNewCard || paymentMethods.length === 0) && (
-          <div className="border rounded-lg p-4 bg-white space-y-4">
+          <div className="border rounded-lg p-6 bg-white space-y-4">
             <Label className="block mb-2">Card Information</Label>
-            <div className="space-y-3">
-              <div>
-                <Label>Card Number</Label>
-                <Input
-                  type="text"
-                  placeholder="1234 5678 9012 3456"
-                  value={cardNumber}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCardNumber(e.target.value)}
-                  className="mt-1"
-                />
-              </div>
-              <div className="flex gap-3">
-                <div className="flex-1">
-                  <Label>Expiry</Label>
-                  <Input
-                    type="text"
-                    placeholder="MM/YY"
-                    value={cardExpiry}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCardExpiry(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-                <div className="flex-1">
-                  <Label>CVC</Label>
-                  <Input
-                    type="text"
-                    placeholder="123"
-                    value={cardCvc}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCardCvc(e.target.value)}
-                    className="mt-1"
-                  />
-                </div>
-              </div>
+            <div className="border p-3 rounded-md">
+              <CardElement 
+                options={{
+                  style: {
+                    base: {
+                      fontSize: '16px',
+                      color: '#424770',
+                      '::placeholder': {
+                        color: '#aab7c4',
+                      },
+                    },
+                    invalid: {
+                      color: '#9e2146',
+                    },
+                  },
+                }}
+              />
             </div>
             <p className="text-xs text-gray-600">
-              Note: This is a demo interface. In production, card details would be handled securely by Stripe Elements.
+              Your card information is encrypted and securely processed by Stripe.
             </p>
           </div>
         )}
       </div>
+
+      {/* Escrow Information */}
+      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Shield className="w-5 h-5 text-green-600" />
+          <h3 className="font-semibold text-green-900">Escrow Protection</h3>
+        </div>
+        
+        <div className="space-y-2 text-sm text-green-800">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4" />
+            <span>Your payment is held securely until work is completed</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            <span>3-day review period after freelancer submits work</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4" />
+            <span>Payment released automatically or through dispute resolution</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Submit Button */}
+      <Button
+        type="submit"
+        disabled={loading || !clientSecret || !stripe}
+        className="w-full bg-blue-600 hover:bg-blue-700"
+        size="lg"
+      >
+        {loading ? (
+          <>
+            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+            Processing Payment...
+          </>
+        ) : (
+          <>
+            <Lock className="w-5 h-5 mr-2" />
+            Secure Payment - ${totalAmount.toFixed(2)}
+          </>
+        )}
+      </Button>
+
+      {/* Terms */}
+      <p className="text-xs text-gray-600 text-center">
+        By clicking "Secure Payment", you agree to our{' '}
+        <a href="/terms" className="text-blue-600 hover:underline">Terms of Service</a>
+        {' '}and{' '}
+        <a href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</a>.
+        Your payment will be held in escrow until the project is completed.
+      </p>
+    </form>
+  );
+}
+
+export function ContractEscrowPayment({
+  contractId,
+  freelancerId,
+  amount,
+  title,
+  requirements = [],
+  onPaymentComplete,
+  className
+}: ContractEscrowPaymentProps) {
+  const [paymentStatus, setPaymentStatus] = useState<'not_started' | 'processing' | 'completed'>('not_started');
+
+  const handlePaymentComplete = (paymentId: string) => {
+    setPaymentStatus('completed');
+    onPaymentComplete?.(paymentId);
+  };
+
+  if (paymentStatus === 'completed') {
+    return (
+      <Card className={className}>
+        <CardContent className="text-center py-8">
+          <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+            <Check className="w-8 h-8 text-green-600" />
+          </div>
+          <CardTitle className="text-xl mb-2 text-green-600">Payment Secured!</CardTitle>
+          <CardDescription>
+            Your payment of ${amount.toFixed(2)} has been secured in escrow. The freelancer can now start working on your project.
+          </CardDescription>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className={className}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Lock className="w-5 h-5" />
+          Secure Escrow Payment
+        </CardTitle>
+        <CardDescription>
+          Pay safely with escrow protection for "{title}"
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent>
+        <Elements stripe={stripePromise}>
+          <PaymentForm
+            contractId={contractId}
+            freelancerId={freelancerId}
+            amount={amount}
+            title={title}
+            requirements={requirements}
+            onPaymentComplete={handlePaymentComplete}
+          />
+        </Elements>
+      </CardContent>
+    </Card>
+  );
+}
 
       {/* Escrow Information */}
       <div className="bg-green-50 border border-green-200 rounded-lg p-4">

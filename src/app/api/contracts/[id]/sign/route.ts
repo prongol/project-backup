@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { EmailNotifications } from '@/lib/notificationEmails';
+import { notifyContractSigned } from '@/lib/notifications';
 
 // POST /api/contracts/[id]/sign - Sign a contract
 export async function POST(
@@ -129,25 +130,14 @@ export async function POST(
       ? contract.freelancer.profile_id 
       : contract.client.profile_id;
 
-    const notificationTitle = bothSigned 
-      ? 'Contract Activated! 🎉'
-      : 'Contract Signed ✍️';
-
-    const notificationMessage = bothSigned
-      ? `The contract "${contract.title}" has been signed by both parties and is now active!`
-      : `${role === 'client' ? 'Client' : 'Freelancer'} has signed the contract "${contract.title}". Waiting for your signature.`;
-
-    await supabase
-      .from('notifications')
-      .insert({
-        user_id: otherPartyId,
-        type: bothSigned ? 'contract_active' : 'contract_signed',
-        title: notificationTitle,
-        message: notificationMessage,
-        link: `/contracts/${id}`,
-        read: false,
-        created_at: now,
-      });
+    // Use the notification library function
+    await notifyContractSigned({
+      recipientProfileId: otherPartyId,
+      contractTitle: contract.title,
+      contractId: id,
+      signerRole: role,
+      bothSigned
+    });
 
     // Send email notification when freelancer signs (client gets notified)
     if (role === 'freelancer' && bothSigned) {

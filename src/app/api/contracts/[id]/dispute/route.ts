@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { notifyDisputeFiled } from '@/lib/notifications';
 
 // POST /api/contracts/[id]/dispute - Create a dispute and pause auto-release timer
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -114,28 +115,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       })
       .eq('id', contractId);
 
+    // Get contract title for notification
+    const { data: contractData } = await supabase
+      .from('contracts')
+      .select('title')
+      .eq('id', contractId)
+      .single();
+
     // Notify the other party
     const otherPartyId = isClient ? contract.freelancers[0]?.profile_id : contract.clients[0]?.profile_id;
-    await supabase
-      .from('notifications')
-      .insert({
-        user_id: otherPartyId,
-        type: 'dispute_opened',
-        title: '⚠️ Dispute Opened',
-        message: `A dispute has been opened for your contract. Please review and provide your response.`,
-        action_url: `/contracts/${contractId}/dispute/${dispute.id}`
+    if (otherPartyId && contractData) {
+      await notifyDisputeFiled({
+        recipientProfileId: otherPartyId,
+        contractTitle: contractData.title,
+        contractId: contractId,
+        disputeId: dispute.id,
+        filerRole: isClient ? 'client' : 'freelancer'
       });
-
-    // Notify admin about new dispute
-    await supabase
-      .from('notifications')
-      .insert({
-        user_id: 'admin', // You'll need to handle admin notifications
-        type: 'new_dispute',
-        title: 'New Dispute Requires Review',
-        message: `A new dispute has been opened and requires admin attention.`,
-        action_url: `/admin/disputes/${dispute.id}`
-      });
+    }
 
     return NextResponse.json({
       success: true,

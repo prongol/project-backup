@@ -798,6 +798,252 @@ export function getProjectCancelledEmail(
   };
 }
 
+/**
+ * 8. Work Submitted for Review
+ * Sent to client when freelancer submits work
+ */
+export function getWorkSubmittedEmail(
+  clientName: string,
+  clientEmail: string,
+  freelancerName: string,
+  contractTitle: string,
+  contractId: string,
+  deliverables: string
+): EmailTemplate {
+  return {
+    to: clientEmail,
+    subject: `📋 Work Submitted: ${contractTitle}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background: #f4f7f9; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 40px 30px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; }
+            .content { padding: 40px 30px; }
+            .work-card { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 25px; margin: 20px 0; border-radius: 8px; }
+            .button { display: inline-block; padding: 14px 32px; background: #3b82f6; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 25px 0; }
+            .alert { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 8px; }
+            .footer { background: #f8fafb; padding: 30px; text-align: center; color: #6b7280; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>📋 Work Submitted for Review</h1>
+            </div>
+            <div class="content">
+              <p style="font-size: 16px;">Hi <strong>${clientName}</strong>,</p>
+              <p><strong>${freelancerName}</strong> has submitted their work for the project "<strong>${contractTitle}</strong>" and it's ready for your review.</p>
+              
+              <div class="work-card">
+                <h3 style="margin: 0 0 15px 0; color: #3b82f6;">📦 Deliverables</h3>
+                <p style="white-space: pre-wrap;">${deliverables}</p>
+              </div>
+
+              <div class="alert">
+                <strong>⏰ Please Review Within 3 Days</strong><br>
+                You have 3 days to review the work and either approve or request revisions.
+              </div>
+
+              <center>
+                <a href="${APP_URL}/contracts/${contractId}" class="button">Review Work</a>
+              </center>
+
+              <p style="margin-top: 30px;"><strong>Your Options:</strong></p>
+              <ul style="line-height: 2;">
+                <li><strong>Approve:</strong> If satisfied, approve to release payment</li>
+                <li><strong>Request Revision:</strong> Ask for changes if needed</li>
+                <li><strong>Contact Freelancer:</strong> Discuss any concerns</li>
+              </ul>
+              
+              <p>Best regards,<br><strong>The Neplancer Team</strong></p>
+            </div>
+            <div class="footer">
+              <p>© 2026 Neplancer. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `,
+  };
+}
+
+/**
+ * 9. Dispute Created
+ * Sent to both parties when a dispute is filed
+ */
+export function getDisputeCreatedEmail(
+  recipientName: string,
+  recipientEmail: string,
+  contractTitle: string,
+  disputeId: string,
+  disputeReason: string,
+  isInitiator: boolean
+): EmailTemplate {
+  return {
+    to: recipientEmail,
+    subject: `⚠️ Dispute Filed: ${contractTitle}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background: #f4f7f9; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%); color: white; padding: 40px 30px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; }
+            .content { padding: 40px 30px; }
+            .dispute-card { background: #fee2e2; border-left: 4px solid #dc2626; padding: 25px; margin: 20px 0; border-radius: 8px; }
+            .button { display: inline-block; padding: 14px 32px; background: #dc2626; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 25px 0; }
+            .info { background: #dbeafe; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 8px; }
+            .footer { background: #f8fafb; padding: 30px; text-align: center; color: #6b7280; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>⚠️ Dispute Filed</h1>
+            </div>
+            <div class="content">
+              <p style="font-size: 16px;">Hi <strong>${recipientName}</strong>,</p>
+              <p>${isInitiator ? 'Your dispute has been filed' : 'A dispute has been filed'} for the project "<strong>${contractTitle}</strong>".</p>
+              
+              <div class="dispute-card">
+                <h3 style="margin: 0 0 15px 0; color: #dc2626;">Dispute Reason</h3>
+                <p style="white-space: pre-wrap;">${disputeReason}</p>
+              </div>
+
+              <div class="info">
+                <strong>📋 What Happens Next?</strong><br>
+                <ul style="margin: 10px 0; padding-left: 20px;">
+                  <li>Our admin team will review the dispute</li>
+                  <li>Both parties can provide evidence</li>
+                  <li>A fair resolution will be determined</li>
+                  <li>Payment will be held in escrow during review</li>
+                </ul>
+              </div>
+
+              <center>
+                <a href="${APP_URL}/disputes/${disputeId}" class="button">View Dispute Details</a>
+              </center>
+
+              <p style="margin-top: 30px;"><strong>How to Resolve:</strong></p>
+              <ul style="line-height: 2;">
+                <li>Communicate clearly with the other party</li>
+                <li>Provide evidence (screenshots, files, messages)</li>
+                <li>Be professional and factual</li>
+                <li>Respond to admin requests promptly</li>
+              </ul>
+              
+              <p>Best regards,<br><strong>The Neplancer Support Team</strong></p>
+            </div>
+            <div class="footer">
+              <p>© 2026 Neplancer. All rights reserved.</p>
+              <p>Need help? Contact us at support@neplancer.com</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `,
+  };
+}
+
+/**
+ * 10. Contract Completed
+ * Sent to both parties when contract is successfully closed
+ */
+export function getContractCompletedEmail(
+  recipientName: string,
+  recipientEmail: string,
+  contractTitle: string,
+  contractId: string,
+  amount: number,
+  otherPartyName: string,
+  isFreelancer: boolean
+): EmailTemplate {
+  return {
+    to: recipientEmail,
+    subject: `✅ Contract Completed: ${contractTitle}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background: #f4f7f9; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #0CF574 0%, #00D9A3 100%); color: white; padding: 40px 30px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; }
+            .content { padding: 40px 30px; }
+            .success-card { background: #f0fdf4; border-left: 4px solid #0CF574; padding: 25px; margin: 20px 0; border-radius: 8px; text-align: center; }
+            .amount { font-size: 42px; color: #0CF574; font-weight: bold; margin: 15px 0; }
+            .button { display: inline-block; padding: 14px 32px; background: #0CF574; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 25px 0; }
+            .rating { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 8px; }
+            .footer { background: #f8fafb; padding: 30px; text-align: center; color: #6b7280; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🎉 Contract Completed!</h1>
+            </div>
+            <div class="content">
+              <p style="font-size: 16px;">Hi <strong>${recipientName}</strong>,</p>
+              <p>Congratulations! The project "<strong>${contractTitle}</strong>" has been successfully completed.</p>
+              
+              <div class="success-card">
+                <h3 style="margin: 0 0 10px 0; color: #0CF574;">✅ Project Completed</h3>
+                <p style="color: #6b7280; margin: 5px 0;">Contract with ${otherPartyName}</p>
+                <div class="amount">$${amount.toLocaleString()}</div>
+                <p style="color: #6b7280; margin: 0;">${isFreelancer ? 'Earnings' : 'Project Cost'}</p>
+              </div>
+
+              ${isFreelancer ? `
+              <div class="rating">
+                <strong>⭐ Please Rate Your Experience</strong><br>
+                Help other freelancers by rating your client. Your feedback improves the platform for everyone!
+              </div>
+              ` : `
+              <div class="rating">
+                <strong>⭐ Please Rate Your Experience</strong><br>
+                Help other clients by rating your freelancer. Your feedback helps build a trusted community!
+              </div>
+              `}
+
+              <center>
+                <a href="${APP_URL}/contracts/${contractId}" class="button">${isFreelancer ? 'Rate Client & View Details' : 'Rate Freelancer & View Details'}</a>
+              </center>
+
+              <p style="margin-top: 30px;"><strong>What's Next?</strong></p>
+              <ul style="line-height: 2;">
+                ${isFreelancer ? `
+                <li>Payment has been released to your account</li>
+                <li>Update your portfolio with this project</li>
+                <li>Browse new opportunities</li>
+                ` : `
+                <li>Hire ${otherPartyName} again for future projects</li>
+                <li>Post a new job if you need more work done</li>
+                <li>Leave a public review to help others</li>
+                `}
+              </ul>
+              
+              <p>Thank you for using Neplancer!<br><strong>The Neplancer Team</strong></p>
+            </div>
+            <div class="footer">
+              <p>© 2026 Neplancer. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `,
+  };
+}
+
 // =============================================================================
 // EMAIL SENDING FUNCTION
 // =============================================================================
@@ -848,11 +1094,16 @@ export const EmailNotifications = {
   proposalReceived: getProposalReceivedEmail,
   freelancerSignedContract: getFreelancerSignedContractEmail,
   workCompleted: getWorkCompletedEmail,
+  workSubmitted: getWorkSubmittedEmail,
   
   // Freelancer emails
   contractArrived: getContractArrivedEmail,
   paymentReceived: getPaymentReceivedEmail,
   projectCancelled: getProjectCancelledEmail,
+  
+  // Both parties
+  disputeCreated: getDisputeCreatedEmail,
+  contractCompleted: getContractCompletedEmail,
   
   // Send function
   send: sendNotificationEmail,

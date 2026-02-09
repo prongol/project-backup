@@ -30,6 +30,7 @@ export default function FreelancerProfilePage() {
   const [freelancer, setFreelancer] = useState<Freelancer | null>(null);
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [similarFreelancers, setSimilarFreelancers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'portfolio' | 'reviews'>('overview');
@@ -57,6 +58,19 @@ export default function FreelancerProfilePage() {
       setFreelancer(data.freelancer);
       setPortfolio(data.portfolio || []);
       setReviews(data.reviews || []);
+
+      // Load similar freelancers if available (optional feature)
+      try {
+        const similarResponse = await fetch(`/api/freelancers/${freelancerId}/similar`);
+        if (similarResponse.ok) {
+          const similarData = await similarResponse.json();
+          setSimilarFreelancers(similarData.freelancers || []);
+        }
+      } catch (error) {
+        // Similar freelancers is optional, just log if it fails
+        console.log('Similar freelancers not available:', error);
+        setSimilarFreelancers([]);
+      }
 
       // Check if saved
       const savedProfiles = JSON.parse(localStorage.getItem('savedProfiles') || '[]');

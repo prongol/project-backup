@@ -254,7 +254,7 @@ function SearchFreelancersContent() {
             Find Talented Nepali Freelancers
           </h1>
           <p className="text-gray-600">
-            Browse {filteredFreelancers.length} of {freelancers.length} freelancers
+            Browse {freelancers.length} talented freelancers
           </p>
         </div>
 
@@ -352,7 +352,7 @@ function SearchFreelancersContent() {
         {/* View Toggle and Results Count */}
         <div className="flex items-center justify-between mb-6">
           <p className="text-gray-600">
-            Showing <span className="font-bold">{rankedFreelancers.length}</span> results
+            Showing <span className="font-bold">{freelancers.length}</span> results
           </p>
           <div className="flex gap-2">
             <button

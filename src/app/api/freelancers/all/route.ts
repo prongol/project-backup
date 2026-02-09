@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { createClient } from '@/lib/supabase/server';
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createRouteHandlerClient({ cookies });
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     
     const category = searchParams.get('category');
@@ -16,7 +15,7 @@ export async function GET(request: NextRequest) {
       .from('freelancers')
       .select(`
         *,
-        profiles!inner (
+        profiles (
           id,
           full_name,
           email,
@@ -47,13 +46,15 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Database error:', error);
-      return NextResponse.json({ error: 'Failed to fetch freelancers' }, { status: 500 });
+      // Return empty array instead of error for better UX
+      return NextResponse.json({ freelancers: [] });
     }
 
     return NextResponse.json({ freelancers: freelancers || [] });
 
   } catch (error) {
     console.error('Server error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    // Return empty array instead of error for better UX
+    return NextResponse.json({ freelancers: [] });
   }
 }

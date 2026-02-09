@@ -644,7 +644,6 @@ export default function RegisterFreelancerPage() {
             </div>
           </form>
         </div>
-        <button onClick={send}>send</button>
 
         {/* Footer */}
         <p className="text-center mt-6 text-gray-600">

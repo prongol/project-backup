@@ -240,11 +240,13 @@ export default function FreelancerDashboard() {
                       onClick={() => router.push(`/contracts/${contract.id}`)}
                     >
                       <div className="flex-1">
-                        <h3 className="font-medium text-gray-900 mb-1">{contract.jobTitle}</h3>
+                        <h3 className="font-medium text-gray-900 mb-1">
+                          {(contract as any).job?.title || contract.jobTitle || 'Untitled Contract'}
+                        </h3>
                         <div className="flex items-center gap-4 text-sm text-gray-600">
                           <span className="flex items-center gap-1">
                             <DollarSign className="w-4 h-4" />
-                            ${contract.totalAmount.toLocaleString()}
+                            ${((contract as any).total_amount || contract.totalAmount || 0).toLocaleString()}
                           </span>
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                             contract.status === 'active' ? 'bg-green-50 text-green-700' :

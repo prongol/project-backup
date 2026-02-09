@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { EmailNotifications } from '@/lib/notificationEmails';
 
 // POST /api/contracts/[id]/review - Client reviews and approves/requests revisions
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -21,9 +22,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const { data: contract, error: contractError } = await supabase
       .from('contracts')
       .select(`
-        id, client_id, freelancer_id, status,
-        clients!inner(profile_id),
-        freelancers!inner(profile_id)
+        id, client_id, freelancer_id, status, title, budget,
+        clients!inner(profile_id, profiles!inner(full_name, email)),
+        freelancers!inner(profile_id, profiles!inner(full_name, email))
       `)
       .eq('id', contractId)
       .single();
@@ -132,6 +133,38 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           message: 'Your work has been approved and payment has been released to your account.',
           action_url: `/freelancer/contracts/${contractId}`
         });
+      
+      // Send completion emails to both parties
+      const freelancerProfile = contract.freelancers[0]?.profiles;
+      const clientProfile = contract.clients[0]?.profiles;
+      
+      if (freelancerProfile?.full_name && freelancerProfile?.email) {
+        await EmailNotifications.send(
+          EmailNotifications.contractCompleted(
+            freelancerProfile.full_name,
+            freelancerProfile.email,
+            contract.title,
+            contractId,
+            contract.budget || 0,
+            clientProfile?.full_name || 'Client',
+            true // isFreelancer
+          )
+        );
+      }
+      
+      if (clientProfile?.full_name && clientProfile?.email) {
+        await EmailNotifications.send(
+          EmailNotifications.contractCompleted(
+            clientProfile.full_name,
+            clientProfile.email,
+            contract.title,
+            contractId,
+            contract.budget || 0,
+            freelancerProfile?.full_name || 'Freelancer',
+            false // isFreelancer
+          )
+        );
+      }
 
     } else if (action === 'revision_requested') {
       // Request revisions

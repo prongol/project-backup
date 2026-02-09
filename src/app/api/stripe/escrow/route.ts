@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { 
+  stripe,
   createConnectEscrowPayment,
   releaseEscrowPayment,
   refundEscrowPayment,
@@ -7,7 +8,7 @@ import {
 } from '@/lib/stripe';
 import { createClient } from '@/lib/supabase/server';
 
-// POST /api/stripe/escrow - Create escrow payment
+// POST /api/stripe/escrow - Create or update escrow payment record
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient();
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { contractId, amount } = await req.json();
+    const { contractId, amount, paymentMethodId, paymentIntentId } = await req.json();
 
     // Get contract details
     const { data: contract, error: contractError } = await supabase
@@ -48,45 +49,66 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check if freelancer has completed Connect setup
-    if (!contract.freelancers[0]?.stripe_onboarding_completed) {
-      return NextResponse.json(
-        { error: 'Freelancer has not completed payment setup. Please ask them to complete their payment information first.' },
-        { status: 400 }
+    let paymentIntent;
+
+    if (paymentIntentId) {
+      // If we already have a payment intent ID from the frontend (Stripe Elements check-out)
+      // Retrieve it and verify status
+      paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+      
+      if (paymentIntent.status !== 'requires_capture' && paymentIntent.status !== 'succeeded') {
+        return NextResponse.json(
+          { error: `Payment intent is in invalid status: ${paymentIntent.status}` },
+          { status: 400 }
+        );
+      }
+    } else {
+      // Check if freelancer has completed Connect setup
+      if (!contract.freelancers[0]?.stripe_onboarding_completed) {
+        return NextResponse.json(
+          { error: 'Freelancer has not completed payment setup. Please ask them to complete their payment information first.' },
+          { status: 400 }
+        );
+      }
+
+      // Create/get Stripe customer for client if not exists
+      let customerId = contract.clients[0]?.stripe_customer_id;
+      if (!customerId) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name, email')
+          .eq('id', user.id)
+          .single();
+
+        const customer = await createStripeCustomerForClient(
+          profile!.email,
+          profile!.full_name,
+          user.id
+        );
+
+        customerId = customer.id;
+
+        // Save customer ID
+        await supabase
+          .from('clients')
+          .update({ stripe_customer_id: customerId })
+          .eq('profile_id', user.id);
+      }
+
+      // Create escrow payment intent (original flow)
+      paymentIntent = await createConnectEscrowPayment(
+        amount,
+        contract.freelancers[0]?.stripe_connect_account_id,
+        contractId,
+        user.id,
+        paymentMethodId && paymentMethodId !== 'pm_placeholder' ? paymentMethodId : undefined
       );
     }
 
-    // Create/get Stripe customer for client if not exists
-    let customerId = contract.clients[0]?.stripe_customer_id;
-    if (!customerId) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('full_name, email')
-        .eq('id', user.id)
-        .single();
-
-      const customer = await createStripeCustomerForClient(
-        profile!.email,
-        profile!.full_name,
-        user.id
-      );
-
-      customerId = customer.id;
-
-      // Save customer ID
-      await supabase
-        .from('clients')
-        .update({ stripe_customer_id: customerId })
-        .eq('profile_id', user.id);
-    }
-
-    // Create escrow payment intent
-    const paymentIntent = await createConnectEscrowPayment(
-      amount,
-      contract.freelancers[0]?.stripe_connect_account_id,
-      contractId,
-      user.id
-    );
+    // Determine status based on stripe payment intent status
+    const escrowStatus = paymentIntent.status === 'requires_capture' || paymentIntent.status === 'succeeded' 
+      ? 'held' 
+      : 'pending_payment';
 
     // Create/update escrow account
     const { data: escrowAccount, error: escrowError } = await supabase
@@ -96,9 +118,10 @@ export async function POST(req: NextRequest) {
         total_amount: amount,
         platform_fee_amount: (amount * 7) / 100,
         stripe_payment_intent_id: paymentIntent.id,
-        client_stripe_customer_id: customerId,
+        client_stripe_customer_id: paymentIntent.customer as string || contract.clients[0]?.stripe_customer_id,
         freelancer_connect_account_id: contract.freelancers[0]?.stripe_connect_account_id,
-        status: 'pending_payment'
+        status: escrowStatus,
+        held_amount: paymentIntent.status === 'requires_capture' ? amount : 0
       })
       .select()
       .single();
@@ -122,14 +145,15 @@ export async function POST(req: NextRequest) {
         platform_fee_amount: (amount * 7) / 100,
         net_freelancer_amount: amount - (amount * 7) / 100,
         type: 'escrow_deposit',
-        status: 'pending',
+        status: paymentIntent.status === 'requires_capture' || paymentIntent.status === 'succeeded' ? 'completed' : 'pending',
         stripe_payment_intent_id: paymentIntent.id,
         escrow_account_id: escrowAccount.id
       });
 
     return NextResponse.json({
       success: true,
-      paymentIntent: {
+      paymentId: paymentIntent.id,
+      paymentIntentPatch: {
         id: paymentIntent.id,
         clientSecret: paymentIntent.client_secret,
         amount: paymentIntent.amount,

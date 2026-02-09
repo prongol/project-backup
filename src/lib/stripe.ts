@@ -204,6 +204,7 @@ export async function createConnectEscrowPayment(
   connectAccountId: string,
   contractId: string,
   clientId: string,
+  paymentMethodId?: string,
   metadata?: Record<string, string>
 ) {
   const platformFeeAmount = Math.round((amount * PLATFORM_FEE_PERCENTAGE) / 100 * 100); // In cents
@@ -212,10 +213,15 @@ export async function createConnectEscrowPayment(
     amount: Math.round(amount * 100), // Convert to cents
     currency: 'usd',
     application_fee_amount: platformFeeAmount,
-    on_behalf_of: connectAccountId, // Money goes to Connect account
+    transfer_data: {
+      destination: connectAccountId,
+    },
     capture_method: 'manual', // Hold funds in escrow until manual capture
+    payment_method: paymentMethodId,
+    confirm: !!paymentMethodId,
     automatic_payment_methods: {
       enabled: true,
+      allow_redirects: 'never',
     },
     metadata: {
       clientId,

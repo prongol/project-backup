@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { notifyProposalAccepted, notifyProposalRejected } from '@/lib/notifications';
 
 // PATCH /api/proposals/[id] - Update proposal status (approve/reject)
 export async function PATCH(
@@ -95,33 +96,24 @@ export async function PATCH(
       );
     }
 
-    // Create notification for freelancer
-    const notificationType = status === 'accepted' 
-      ? 'proposal_accepted' 
-      : status === 'rejected' 
-      ? 'proposal_rejected' 
-      : 'proposal_updated';
-
-    const notificationMessage = status === 'accepted'
-      ? `Your proposal for "${proposal.jobs.title}" has been accepted! 🎉 The client will send you a contract soon.`
-      : status === 'rejected'
-      ? `Your proposal for "${proposal.jobs.title}" was not accepted.`
-      : `Your proposal for "${proposal.jobs.title}" has been updated.`;
-
-    const { error: notificationError } = await supabase
-      .from('notifications')
-      .insert({
-        user_id: proposal.freelancers.profile_id,
-        type: notificationType,
-        title: status === 'accepted' ? 'Proposal Accepted! 🎉' : status === 'rejected' ? 'Proposal Update' : 'Proposal Updated',
-        message: notificationMessage,
-        link: `/freelancer/my-proposals`,
-        read: false,
-        created_at: new Date().toISOString(),
-      });
-
-    if (notificationError) {
-      console.error('Error creating notification:', notificationError);
+    // Send notification to freelancer
+    try {
+      const freelancerProfileId = proposal.freelancers.profile_id;
+      
+      if (status === 'accepted') {
+        await notifyProposalAccepted({
+          freelancerProfileId: freelancerProfileId,
+          jobTitle: proposal.jobs.title,
+          contractId: '' // Contract will be created separately
+        });
+      } else if (status === 'rejected') {
+        await notifyProposalRejected({
+          freelancerProfileId: freelancerProfileId,
+          jobTitle: proposal.jobs.title
+        });
+      }
+    } catch (notificationError) {
+      console.error('Error sending notification:', notificationError);
       // Don't fail the request if notification fails
     }
 

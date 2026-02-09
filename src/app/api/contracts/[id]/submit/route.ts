@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { notifyWorkSubmitted } from '@/lib/notifications';
+import { EmailNotifications } from '@/lib/notificationEmails';
 
 // POST /api/contracts/[id]/submit - Freelancer submits work
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -20,7 +22,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // Verify contract and user authorization
     const { data: contract, error: contractError } = await supabase
       .from('contracts')
-      .select('id, client_id, freelancer_id, status, freelancers!inner(profile_id)')
+      .select(`
+        id, 
+        title,
+        client_id, 
+        freelancer_id, 
+        status, 
+        freelancers!inner(profile_id),
+        clients!inner(profile_id, profiles!inner(full_name))
+      `)
       .eq('id', contractId)
       .single();
 
@@ -75,6 +85,40 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         work_approval_deadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString() // 3 days
       })
       .eq('id', contractId);
+
+    // Get freelancer name and notify client
+    const { data: freelancerProfile } = await supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', user.id)
+      .single();
+
+    const clientProfileId = contract.clients?.[0]?.profile_id;
+    const clientProfile = contract.clients?.[0]?.profiles;
+    
+    if (clientProfileId && freelancerProfile) {
+      // In-app notification
+      await notifyWorkSubmitted({
+        clientProfileId,
+        contractTitle: contract.title,
+        contractId,
+        freelancerName: freelancerProfile.full_name || 'Freelancer'
+      });
+      
+      // Email notification
+      if (clientProfile?.full_name && clientProfile?.email) {
+        await EmailNotifications.send(
+          EmailNotifications.workSubmitted(
+            clientProfile.full_name,
+            clientProfile.email,
+            freelancerProfile.full_name || 'Freelancer',
+            contract.title,
+            contractId,
+            deliverables
+          )
+        );
+      }
+    }
 
     // Trigger will automatically:
     // 1. Start review period in escrow_accounts

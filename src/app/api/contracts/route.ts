@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { EmailNotifications } from '@/lib/notificationEmails';
 import { stripe } from '@/lib/stripe';
+import { notifyContractReceived } from '@/lib/notifications';
 
 // GET /api/contracts - Get all contracts for the authenticated user
 export async function GET(request: Request) {
@@ -399,18 +400,19 @@ export async function POST(request: Request) {
         });
     }
 
-    // Create notification for freelancer
-    await supabase
-      .from('notifications')
-      .insert({
-        user_id: freelancerProfileId,
-        type: 'contract_received',
-        title: 'New Contract Received! 📝',
-        message: `You have received a contract for "${title}". Review and sign to start working!`,
-        link: `/contracts/${contract.id}`,
-        read: false,
-        created_at: new Date().toISOString(),
-      });
+    // Create notification for freelancer using library function
+    const { data: clientProfile } = await supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', user.id)
+      .single();
+
+    await notifyContractReceived({
+      freelancerProfileId,
+      contractTitle: title,
+      contractId: contract.id,
+      clientName: clientProfile?.full_name || 'A client'
+    });
 
     // Send email notification to freelancer about new contract
     try {

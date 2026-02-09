@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { EmailNotifications } from '@/lib/notificationEmails';
+import { notifyProposalReceived } from '@/lib/notifications';
 
 // GET /api/proposals - Get proposals
 export async function GET(request: Request) {
@@ -271,20 +272,16 @@ export async function POST(request: Request) {
       console.error('Failed to create or find conversation for proposal message');
     }
 
-    // Also create notification for the client (use clientProfileId, not job.client_id)
-    const { error: notificationError } = await supabase
-      .from('notifications')
-      .insert({
-        user_id: clientProfileId,
-        type: 'new_proposal',
-        title: 'New Proposal Received! 📬',
-        message: `${freelancerName} submitted a proposal for your job "${job.title}". Check your messages!`,
-        link: `/communication?conversationId=${conversationId}`,
-        read: false,
-        created_at: new Date().toISOString(),
+    // Send notification to the client
+    try {
+      await notifyProposalReceived({
+        clientProfileId: clientProfileId,
+        freelancerName: freelancerName,
+        jobTitle: job.title,
+        proposalAmount: parseFloat(proposed_budget),
+        jobId: job_id
       });
-
-    if (notificationError) {
+    } catch (notificationError) {
       console.error('Error creating notification:', notificationError);
       // Don't fail the request if notification fails
     }

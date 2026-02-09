@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/server';
 
 // GET /api/notifications - Get user's notifications
 export async function GET(request: Request) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
     const unreadOnly = searchParams.get('unreadOnly') === 'true';
@@ -45,6 +46,7 @@ export async function GET(request: Request) {
 // PUT /api/notifications - Mark notification(s) as read
 export async function PUT(request: Request) {
   try {
+    const supabase = await createClient();
     const body = await request.json();
     const { notificationIds, userId, markAllAsRead } = body;
 
@@ -102,6 +104,7 @@ export async function PUT(request: Request) {
 // DELETE /api/notifications - Delete notification(s)
 export async function DELETE(request: Request) {
   try {
+    const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const notificationId = searchParams.get('id');
     const userId = searchParams.get('userId');

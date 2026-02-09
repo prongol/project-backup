@@ -85,14 +85,11 @@ const HeroSection = () => {
       try {
         setLoadingFreelancers(true);
         const response = await fetch('/api/freelancers/all?limit=8&minRating=4.0');
-        if (response.ok) {
-          const data = await response.json();
-          setTopFreelancers(data.freelancers || []);
-        } else {
-          console.error('Failed to fetch freelancers');
-        }
+        const data = await response.json();
+        setTopFreelancers(data.freelancers || []);
       } catch (error) {
         console.error('Error loading top freelancers:', error);
+        setTopFreelancers([]);
       } finally {
         setLoadingFreelancers(false);
       }

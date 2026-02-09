@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { stripe } from '@/lib/stripe';
+import { stripe, createConnectEscrowPayment } from '@/lib/stripe';
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       .select(`
         id, client_id, freelancer_id,
         clients!inner(profile_id, stripe_customer_id),
-        freelancers!inner(profile_id)
+        freelancers!inner(profile_id, stripe_connect_account_id)
       `)
       .eq('id', contractId)
       .eq('client_id', user.id)
@@ -64,20 +64,13 @@ export async function POST(request: NextRequest) {
         .eq('profile_id', user.id);
     }
 
-    // Create payment intent
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100), // Convert to cents
-      currency: 'usd',
-      customer: customerId,
-      setup_future_usage: 'off_session', // For saving payment method
-      metadata: {
-        contractId,
-        freelancerId,
-        clientId: user.id,
-        type: 'escrow_payment'
-      },
-      capture_method: 'manual' // This is key for escrow - we'll capture later
-    });
+    // Create proper escrow payment intent using the library function
+    const paymentIntent = await createConnectEscrowPayment(
+      amount,
+      contractData.freelancers?.[0]?.stripe_connect_account_id || '',
+      contractId,
+      user.id
+    );
 
     return NextResponse.json({
       clientSecret: paymentIntent.client_secret,

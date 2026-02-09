@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { notifyWorkApproved, notifyWorkRejected } from '@/lib/notifications';
 
 // Auto-release delay: 1 minute for test, 3 days for production
 const AUTO_RELEASE_DELAY_MS = process.env.NODE_ENV === 'production' ? 3 * 24 * 60 * 60 * 1000 : 60 * 1000;
@@ -89,18 +90,13 @@ export async function POST(
 
     const releaseMinutes = AUTO_RELEASE_DELAY_MS / (60 * 1000);
     
-    // Create notification for freelancer
-    await supabase
-      .from('notifications')
-      .insert({
-        user_id: contract.freelancer.profile_id,
-        type: 'contract_approved',
-        title: 'Work Approved! ✅',
-        message: `Your work on "${contract.title}" has been approved! Payment will auto-release in ${releaseMinutes} ${releaseMinutes === 1 ? 'minute' : 'minutes'}.`,
-        link: `/contracts/${id}`,
-        read: false,
-        created_at: now,
-      });
+    // Create notification for freelancer using library function
+    await notifyWorkApproved({
+      freelancerProfileId: contract.freelancer.profile_id,
+      contractTitle: contract.title,
+      contractId: id,
+      autoReleaseMinutes: releaseMinutes
+    });
     
     return NextResponse.json({
       success: true,

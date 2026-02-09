@@ -10,7 +10,10 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/auth/') ||
     request.nextUrl.pathname.startsWith('/api/cron')
   )
-  const isPublicApi = request.nextUrl.pathname.startsWith('/api/jobs') && request.method === 'GET'
+  const isPublicApi = 
+    (request.nextUrl.pathname.startsWith('/api/jobs') && request.method === 'GET') ||
+    request.nextUrl.pathname.startsWith('/api/freelancers/all') ||
+    (request.nextUrl.pathname.match(/^\/api\/freelancers\/[^\/]+$/) && request.method === 'GET')
   
   if (isPublicRoute || isPublicApi) {
     return NextResponse.next()

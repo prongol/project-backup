@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { notifyNewMessage } from '@/lib/notifications';
 
 // GET /api/messages?conversationId=xxx - Get messages for a conversation
 export async function GET(request: NextRequest) {
@@ -145,6 +146,33 @@ export async function POST(request: NextRequest) {
         { error: error.message },
         { status: 500 }
       );
+    }
+
+    // Send notification to recipient
+    try {
+      // Determine recipient (the other person in the conversation)
+      const recipientId = conversation.participant_1_id === user.id 
+        ? conversation.participant_2_id 
+        : conversation.participant_1_id;
+
+      // Get sender's profile to get their name
+      const { data: senderProfile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .single();
+
+      if (senderProfile && recipientId) {
+        await notifyNewMessage({
+          recipientProfileId: recipientId,
+          senderName: senderProfile.full_name || 'Someone',
+          preview: content.trim(),
+          conversationId: conversationId
+        });
+      }
+    } catch (notifError) {
+      console.error('Error sending message notification:', notifError);
+      // Don't fail the request if notification fails
     }
 
     return NextResponse.json({ message: data });

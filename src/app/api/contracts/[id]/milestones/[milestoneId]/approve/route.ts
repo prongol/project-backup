@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { EmailNotifications } from '@/lib/notificationEmails';
+import { notifyMilestoneApproved, notifyMilestoneRejected } from '@/lib/notifications';
 
 // POST /api/contracts/[id]/milestones/[milestoneId]/approve - Approve milestone and release payment
 export async function POST(
@@ -177,18 +178,13 @@ export async function POST(
         .eq('id', contract.freelancer_id);
     }
 
-    // Create notification for freelancer
-    await supabase
-      .from('notifications')
-      .insert({
-        user_id: contract.freelancer.profile_id,
-        type: 'milestone_approved',
-        title: 'Milestone Payment Released! 💰',
-        message: `Milestone "${milestone.title}" approved! You will receive $${freelancerNetAmount.toFixed(2)} (after 7% platform fee) via bank transfer.`,
-        link: `/contracts/${id}`,
-        read: false,
-        created_at: now,
-      });
+    // Create notification for freelancer using library function
+    await notifyMilestoneApproved({
+      freelancerProfileId: contract.freelancer.profile_id,
+      milestoneTitle: milestone.title,
+      amount: freelancerNetAmount,
+      contractId: id
+    });
 
     // Send email notification to freelancer about payment
     try {

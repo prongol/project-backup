@@ -42,6 +42,9 @@ export default function PaymentInformation() {
   // Client payment methods state
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
   const [connectingStripe, setConnectingStripe] = useState(false);
+  
+  // Withdrawal state
+  const [withdrawalAmount, setWithdrawalAmount] = useState('');
 
   useEffect(() => {
     if (user?.role === 'freelancer') {
@@ -275,7 +278,12 @@ export default function PaymentInformation() {
                       <p className="text-sm text-gray-600 mt-2">
                         Minimum: $50.00 • Maximum: ${getAvailableBalance().toFixed(2)}
                       </p>
-                  Balance Display - Auto-transferred by Stripe */}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Balance Display - Auto-transferred by Stripe */}
               <Card className="p-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-6">Balance & Payouts</h2>
                 
@@ -313,13 +321,19 @@ export default function PaymentInformation() {
                     <div>
                       <p className="text-sm font-medium text-gray-900">Payout Schedule</p>
                       <p className="text-sm text-gray-600">Daily automatic transfers (2 business days)</p>
-                    </divsName="text-sm text-gray-500 mt-4">
-                  Powered by Stripe • Secure and encrypted
-                </p>
-              </div>
-            </Card>
-          ) : (
-            /* Has Payment Methods */
+                    </div>
+                  </div>
+
+                  <p className="text-sm text-gray-500 mt-4">
+                    Powered by Stripe • Secure and encrypted
+                  </p>
+                </div>
+              </Card>
+            </>
+          )}
+
+          {/* Payment Methods Section */}
+          {paymentMethods.length > 0 && (
             <Card className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-bold text-gray-900">Payment Methods</h2>
