@@ -77,11 +77,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       );
     }
 
-    // Update contract status to work_submitted
+    // Update contract status to pending_completion
     await supabase
       .from('contracts')
       .update({
-        status: 'work_submitted',
+        status: 'pending_completion',
         work_approval_deadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString() // 3 days
       })
       .eq('id', contractId);

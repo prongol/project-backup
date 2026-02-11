@@ -26,26 +26,26 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') || 'all';
 
-    // Fetch payments (milestones) with contract and user info
+    // Fetch payments (transactions) with contract and user info
     let query = supabase
-      .from('contract_milestones')
+      .from('transactions')
       .select(`
         id,
         amount,
-        payment_status,
+        status,
         created_at,
-        title,
-        contract:contracts!contract_milestones_contract_id_fkey (
+        type,
+        contract:contracts (
           id,
-          title,
-          client:profiles!contracts_client_id_fkey (
-            id,
-            full_name
-          ),
-          freelancer:profiles!contracts_freelancer_id_fkey (
-            id,
-            full_name
-          )
+          title
+        ),
+        sender:profiles!transactions_from_user_id_fkey (
+          id,
+          full_name
+        ),
+        receiver:profiles!transactions_to_user_id_fkey (
+          id,
+          full_name
         )
       `)
       .order('created_at', { ascending: false })
@@ -53,10 +53,10 @@ export async function GET(request: NextRequest) {
 
     // Apply status filter
     if (status !== 'all') {
-      query = query.eq('payment_status', status);
+      query = query.eq('status', status);
     }
 
-    const { data: milestones, error } = await query;
+    const { data: transactions, error } = await query;
 
     if (error) {
       console.error('Error fetching payments:', error);
@@ -64,14 +64,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Transform data to match frontend interface
-    const payments = milestones?.map((m: any) => ({
-      id: m.id,
-      amount: m.amount,
-      status: m.payment_status,
-      created_at: m.created_at,
-      contract_title: m.contract?.title || 'Unknown',
-      client_name: m.contract?.client?.full_name || 'Unknown',
-      freelancer_name: m.contract?.freelancer?.full_name || 'Unknown',
+    const payments = transactions?.map((t: any) => ({
+      id: t.id,
+      amount: t.amount,
+      status: t.status,
+      created_at: t.created_at,
+      contract_title: t.contract?.title || 'System Transaction',
+      client_name: t.sender?.full_name || 'System',
+      freelancer_name: t.receiver?.full_name || 'N/A',
+      type: t.type
     })) || [];
 
     return NextResponse.json({ payments });

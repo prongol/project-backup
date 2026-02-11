@@ -64,8 +64,8 @@ export default function ClientDashboard() {
 
       setStats({
         totalJobs: data.stats.totalJobsPosted || 0,
-        activeContracts: data.stats.activeJobs || 0,
-        completedProjects: data.recentContracts?.filter((c: any) => c.status === 'completed').length || 0,
+        activeContracts: data.stats.activeContractsCount || 0,
+        completedProjects: data.recentContracts?.filter((c: any) => ['approved', 'completed'].includes(c.status)).length || 0,
         totalSpent: data.stats.totalSpending || 0,
         hiredFreelancers: data.recentContracts?.length || 0
       });

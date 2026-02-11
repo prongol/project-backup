@@ -20,11 +20,13 @@ import {
   Loader2,
   Edit,
   History,
+  DollarSign,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ContractSignConfirmModal from '@/components/ContractSignConfirmModal';
 import ContractEditModal from '@/components/ContractEditModal';
 import ContractHistoryView from '@/components/ContractHistoryView';
+import { ContractEscrowPayment } from '@/components/stripe/ContractEscrowPayment';
 
 interface Milestone {
   id: string;
@@ -96,6 +98,8 @@ interface Contract {
     skills: string[];
   };
   milestones?: Milestone[];
+  escrow_status?: string;
+  escrow_funded?: boolean;
 }
 
 export default function ContractDetailPage({ params }: { params: { id: string } }) {
@@ -121,6 +125,7 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   const [showSignConfirm, setShowSignConfirm] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showHistoryView, setShowHistoryView] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -444,11 +449,24 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   const canSign = () => {
     if (!contract || !userRole) return false;
     
+    // Check if both have already signed (this shouldn't happen if status is pending but good to check)
+    if (contract.client_signed_at && contract.freelancer_signed_at) return false;
+
     if (userRole === 'client') {
       return !contract.client_signed_at && contract.status === 'pending';
     } else {
       return !contract.freelancer_signed_at && contract.status === 'pending';
     }
+  };
+
+  const needsEscrowBeforeSigning = () => {
+    if (!contract) return false;
+    // Activation signature requires escrow funding
+    const isActivationSignature = 
+      (userRole === 'client' && contract.freelancer_signed_at) ||
+      (userRole === 'freelancer' && contract.client_signed_at);
+      
+    return isActivationSignature && !contract.escrow_funded;
   };
 
   const isSigned = () => {
@@ -907,24 +925,47 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
                   View History
                 </button>
 
-                {canSign() && (
+                {/* Pay Escrow Button (Client only, when not yet paid) */}
+                {userRole === 'client' && contract.status === 'pending' && !contract.escrow_funded && (
                   <button
-                    onClick={() => setShowSignConfirm(true)}
-                    disabled={signing}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => setShowPaymentModal(true)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#0CF574] text-white rounded-lg hover:bg-[#0CF574]/90 font-bold border-2 border-black/10 shadow-sm transition-all"
                   >
-                    {signing ? (
-                      <>
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                        Signing...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="h-5 w-5" />
-                        Sign Contract
-                      </>
-                    )}
+                    <DollarSign className="h-5 w-5" />
+                    Secure Funds in Escrow
                   </button>
+                )}
+
+                {canSign() && (
+                  <div className="space-y-2">
+                    {needsEscrowBeforeSigning() && (
+                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
+                        <AlertCircle className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+                        <p className="text-sm text-blue-800">
+                          {userRole === 'freelancer' 
+                            ? "Waiting for client to secure funds in escrow before you can sign and activate the contract."
+                            : "You must secure funds in escrow before this contract can be activated."}
+                        </p>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setShowSignConfirm(true)}
+                      disabled={signing || needsEscrowBeforeSigning()}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all"
+                    >
+                      {signing ? (
+                        <>
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          Signing...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-5 w-5" />
+                          Sign Contract
+                        </>
+                      )}
+                    </button>
+                  </div>
                 )}
 
                 {isSigned() && contract.status === 'pending' && (
@@ -1195,6 +1236,31 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
           isOpen={showHistoryView}
           onClose={() => setShowHistoryView(false)}
         />
+
+        {/* Stripe Escrow Payment Modal */}
+        {showPaymentModal && contract && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto relative">
+              <button 
+                onClick={() => setShowPaymentModal(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 z-10"
+              >
+                <XCircle className="h-6 w-6" />
+              </button>
+              <ContractEscrowPayment
+                contractId={contract.id}
+                freelancerId={contract.freelancer_id}
+                amount={contract.total_amount}
+                title={contract.title}
+                onPaymentComplete={() => {
+                  setShowPaymentModal(false);
+                  toast.success('Funds secured in escrow!');
+                  fetchContract();
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

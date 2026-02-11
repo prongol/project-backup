@@ -129,7 +129,13 @@ export default function ContractsPage() {
 
     // Filter by status
     if (selectedStatus !== 'all') {
-      filtered = filtered.filter(c => c.status === selectedStatus);
+      if (selectedStatus === 'active') {
+        filtered = filtered.filter(c => ['active', 'pending_completion'].includes(c.status));
+      } else if (selectedStatus === 'completed') {
+        filtered = filtered.filter(c => ['approved', 'completed'].includes(c.status));
+      } else {
+        filtered = filtered.filter(c => c.status === selectedStatus);
+      }
     }
 
     // Filter by search term
@@ -150,6 +156,10 @@ export default function ContractsPage() {
         return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'active':
         return 'bg-green-100 text-green-800 border-green-200';
+      case 'work_submitted':
+        return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+      case 'approved':
+        return 'bg-teal-100 text-teal-800 border-teal-200';
       case 'completed':
         return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'cancelled':
@@ -165,6 +175,10 @@ export default function ContractsPage() {
         return <Clock className="h-4 w-4" />;
       case 'active':
         return <TrendingUp className="h-4 w-4" />;
+      case 'work_submitted':
+        return <FileText className="h-4 w-4" />;
+      case 'approved':
+        return <CheckCircle className="h-4 w-4" />;
       case 'completed':
         return <CheckCircle className="h-4 w-4" />;
       case 'cancelled':
@@ -177,8 +191,8 @@ export default function ContractsPage() {
   const statusCounts = {
     all: contracts.length,
     pending: contracts.filter(c => c.status === 'pending').length,
-    active: contracts.filter(c => c.status === 'active').length,
-    completed: contracts.filter(c => c.status === 'completed').length,
+    active: contracts.filter(c => ['active', 'pending_completion'].includes(c.status)).length,
+    completed: contracts.filter(c => ['approved', 'completed'].includes(c.status)).length,
     cancelled: contracts.filter(c => c.status === 'cancelled').length,
   };
 

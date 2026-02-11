@@ -108,6 +108,24 @@ export async function POST(
 
     // If both parties have signed, update status to active
     if (bothSigned) {
+      // REQUIREMENT: Escrow must be funded before contract becomes active
+      const { data: escrowAccount } = await supabase
+        .from('escrow_accounts')
+        .select('status')
+        .eq('contract_id', id)
+        .eq('status', 'held')
+        .single();
+
+      if (!escrowAccount) {
+        return NextResponse.json(
+          { 
+            error: 'Escrow not funded', 
+            message: 'The contract cannot be activated until funds are secured in escrow. Please ask the client to secure the funds first.' 
+          },
+          { status: 400 }
+        );
+      }
+
       updateData.status = 'active';
     }
 

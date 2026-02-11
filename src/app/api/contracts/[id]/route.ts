@@ -91,10 +91,19 @@ export async function GET(
       .eq('contract_id', id)
       .order('created_at', { ascending: true });
 
+    // Get escrow status
+    const { data: escrowAccount } = await supabase
+      .from('escrow_accounts')
+      .select('status, held_amount')
+      .eq('contract_id', id)
+      .single();
+
     return NextResponse.json({ 
       contract: {
         ...contract,
-        milestones: milestones || []
+        milestones: milestones || [],
+        escrow_status: escrowAccount?.status || 'pending',
+        escrow_funded: escrowAccount?.status === 'held'
       }
     });
   } catch (error) {

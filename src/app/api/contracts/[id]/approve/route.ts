@@ -23,7 +23,7 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { approval_note } = body;
+    const { approval_note, rating, review } = body;
 
     // Get the contract
     const { data: contract, error: contractError } = await supabase
@@ -68,7 +68,7 @@ export async function POST(
     const now = new Date().toISOString();
     const autoReleaseAt = new Date(Date.now() + AUTO_RELEASE_DELAY_MS).toISOString();
 
-    // Update contract - set status to 'approved' and start auto-release timer
+    // 1. Update contract - set status to 'approved' and start auto-release timer
     const { error: updateError } = await supabase
       .from('contracts')
       .update({
@@ -86,6 +86,29 @@ export async function POST(
         { error: updateError.message },
         { status: 500 }
       );
+    }
+
+    // 2. Save rating and review if provided
+    if (rating) {
+      try {
+        const { error: reviewError } = await supabase
+          .from('reviews')
+          .insert({
+            contract_id: id,
+            reviewer_id: user.id, // Current user (Client)
+            reviewee_id: contract.freelancer.profile_id, // Freelancer
+            reviewer_type: 'client',
+            rating: rating,
+            comment: review || null
+          });
+
+        if (reviewError) {
+          console.error('Error saving review:', reviewError);
+          // Don't fail the whole request for a review error, but log it
+        }
+      } catch (reviewEx) {
+        console.error('Exception saving review:', reviewEx);
+      }
     }
 
     const releaseMinutes = AUTO_RELEASE_DELAY_MS / (60 * 1000);

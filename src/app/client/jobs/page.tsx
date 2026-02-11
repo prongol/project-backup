@@ -31,7 +31,7 @@ interface Job {
   skills: string[];
   status: 'open' | 'in_progress' | 'completed' | 'cancelled';
   deadline: string | null;
-  createdAt: string;
+  created_at: string;
 }
 
 export default function ClientJobsPage() {
@@ -321,7 +321,7 @@ export default function ClientJobsPage() {
                 {/* Footer */}
                 <div className="flex justify-between items-center pt-4 border-t">
                   <p className="text-sm text-gray-500">
-                    Posted on {new Date(job.createdAt).toLocaleDateString('en-US', {
+                    Posted on {new Date(job.created_at).toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
                       year: 'numeric'

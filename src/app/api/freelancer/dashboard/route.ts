@@ -47,8 +47,12 @@ export async function GET(request: NextRequest) {
 
     // Get stats in parallel
     const [
-      { count: activeProjects },
-      { count: completedProjects },
+      { count: activeCount },
+      { count: pendingCompletionCount },
+      { count: workSubmittedCount },
+      { count: approvedCount },
+      { count: completedCount },
+      { count: paidCount },
       { count: pendingProposals },
       { data: earnings }
     ] = await Promise.all([
@@ -57,26 +61,45 @@ export async function GET(request: NextRequest) {
         .select('*', { count: 'exact', head: true })
         .eq('freelancer_id', freelancerData?.id || '')
         .eq('status', 'active'),
-      
+      supabase
+        .from('contracts')
+        .select('*', { count: 'exact', head: true })
+        .eq('freelancer_id', freelancerData?.id || '')
+        .eq('status', 'pending_completion'),
+      supabase
+        .from('contracts')
+        .select('*', { count: 'exact', head: true })
+        .eq('freelancer_id', freelancerData?.id || '')
+        .eq('status', 'work_submitted'),
+      supabase
+        .from('contracts')
+        .select('*', { count: 'exact', head: true })
+        .eq('freelancer_id', freelancerData?.id || '')
+        .eq('status', 'approved'),
       supabase
         .from('contracts')
         .select('*', { count: 'exact', head: true })
         .eq('freelancer_id', freelancerData?.id || '')
         .eq('status', 'completed'),
-      
+      supabase
+        .from('contracts')
+        .select('*', { count: 'exact', head: true })
+        .eq('freelancer_id', freelancerData?.id || '')
+        .eq('status', 'paid'),
       supabase
         .from('proposals')
         .select('*', { count: 'exact', head: true })
         .eq('freelancer_id', freelancerData?.id || '')
         .eq('status', 'pending'),
-      
       supabase
         .from('contracts')
         .select('total_amount')
         .eq('freelancer_id', freelancerData?.id || '')
-        .eq('status', 'completed')
+        .in('status', ['approved', 'completed', 'paid'])
     ]);
 
+    const activeProjects = (activeCount || 0) + (pendingCompletionCount || 0) + (workSubmittedCount || 0);
+    const completedProjectsCount = (approvedCount || 0) + (completedCount || 0) + (paidCount || 0);
     const totalEarnings = earnings?.reduce((sum, contract) => sum + (contract.total_amount || 0), 0) || 0;
 
     // Get recent contracts
@@ -102,8 +125,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       stats: {
         totalEarnings,
-        activeProjects: activeProjects || 0,
-        completedProjects: completedProjects || 0,
+        activeProjects,
+        completedProjects: completedProjectsCount,
         pendingApplications: pendingProposals || 0,
       },
       recentContracts: recentContracts || [],

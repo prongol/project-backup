@@ -7,7 +7,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useProfileGate } from '@/hooks/useProfileGate';
 import ProfileGateModal from '@/components/ProfileGateModal';
 import WelcomeBanner from '@/components/WelcomeBanner';
-import MockPaymentSystem from '@/components/MockPaymentSystem';
 import { Briefcase, DollarSign, Calendar, Tag, CheckCircle2 } from 'lucide-react';
 
 const manrope = Manrope({
@@ -57,7 +56,6 @@ export default function PostJobPage() {
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -125,17 +123,11 @@ export default function PostJobPage() {
       return;
     }
 
-    // Check bank details completion (only after valid form)
-    if (!requireBankDetails('/client/post-job')) {
-      return;
-    }
-
-    // Show payment modal instead of immediately creating job
-    setShowPaymentModal(true);
+    // Process job posting immediately without payment
+    await finalizeJobPosting();
   };
 
-  const handlePaymentComplete = async (paymentId: string) => {
-    setShowPaymentModal(false);
+  const finalizeJobPosting = async () => {
     setIsLoading(true);
 
     try {
@@ -167,7 +159,6 @@ export default function PostJobPage() {
         skills: formData.skills,
         deadline: formData.deadline || null,
         status: 'open',
-        payment_id: paymentId, // Link to the mock payment
       };
 
       console.log('Posting job:', jobPayload);
@@ -412,14 +403,6 @@ export default function PostJobPage() {
         type={gateType}
         role="client"
         returnTo={returnUrl}
-      />
-
-      {/* Payment Modal */}
-      <MockPaymentSystem
-        isOpen={showPaymentModal}
-        onClose={() => setShowPaymentModal(false)}
-        jobBudget={parseFloat(formData.budget) || 0}
-        onPaymentComplete={handlePaymentComplete}
       />
     </div>
   );

@@ -100,6 +100,13 @@ function PaymentForm({
         throw new Error(data.message || 'Failed to create payment intent');
       }
 
+      if (data.isPlatformEscrow) {
+        console.warn('Escrow will be held by platform as freelancer hasn\'t connected Stripe yet.');
+        toast.info('Note: Payment will be held by the platform until freelancer completes setup.', {
+          duration: 5000
+        });
+      }
+
       setClientSecret(data.clientSecret);
     } catch (error: any) {
       console.error('Error creating payment intent:', error);
@@ -417,115 +424,3 @@ export function ContractEscrowPayment({
   );
 }
 
-      {/* Escrow Information */}
-      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Shield className="w-5 h-5 text-green-600" />
-          <h3 className="font-semibold text-green-900">Escrow Protection</h3>
-        </div>
-        
-        <div className="space-y-2 text-sm text-green-800">
-          <div className="flex items-center gap-2">
-            <Lock className="w-4 h-4" />
-            <span>Your payment is held securely until work is completed</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4" />
-            <span>3-day review period after freelancer submits work</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Check className="w-4 h-4" />
-            <span>Payment released automatically or through dispute resolution</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Submit Button */}
-      <Button
-        type="submit"
-        disabled={loading || !clientSecret}
-        className="w-full bg-blue-600 hover:bg-blue-700"
-        size="lg"
-      >
-        {loading ? (
-          <>
-            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-            Processing Payment...
-          </>
-        ) : (
-          <>
-            <Lock className="w-5 h-5 mr-2" />
-            Secure Payment - ${totalAmount.toFixed(2)}
-          </>
-        )}
-      </Button>
-
-      {/* Terms */}
-      <p className="text-xs text-gray-600 text-center">
-        By clicking "Secure Payment", you agree to our{' '}
-        <a href="/terms" className="text-blue-600 hover:underline">Terms of Service</a>
-        {' '}and{' '}
-        <a href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</a>.
-        Your payment will be held in escrow until the project is completed.
-      </p>
-    </form>
-  );
-}
-
-export function ContractEscrowPayment({
-  contractId,
-  freelancerId,
-  amount,
-  title,
-  requirements = [],
-  onPaymentComplete,
-  className
-}: ContractEscrowPaymentProps) {
-  const [paymentStatus, setPaymentStatus] = useState<'not_started' | 'processing' | 'completed'>('not_started');
-
-  const handlePaymentComplete = (paymentId: string) => {
-    setPaymentStatus('completed');
-    onPaymentComplete?.(paymentId);
-  };
-
-  if (paymentStatus === 'completed') {
-    return (
-      <Card className={className}>
-        <CardContent className="text-center py-8">
-          <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
-            <Check className="w-8 h-8 text-green-600" />
-          </div>
-          <CardTitle className="text-xl mb-2 text-green-600">Payment Secured!</CardTitle>
-          <CardDescription>
-            Your payment of ${amount.toFixed(2)} has been secured in escrow. The freelancer can now start working on your project.
-          </CardDescription>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card className={className}>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Lock className="w-5 h-5" />
-          Secure Escrow Payment
-        </CardTitle>
-        <CardDescription>
-          Pay safely with escrow protection for "{title}"
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent>
-        <PaymentForm
-          contractId={contractId}
-          freelancerId={freelancerId}
-          amount={amount}
-          title={title}
-          requirements={requirements}
-          onPaymentComplete={handlePaymentComplete}
-        />
-      </CardContent>
-    </Card>
-  );
-}

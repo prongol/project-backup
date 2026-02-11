@@ -88,28 +88,34 @@ export async function GET(request: Request) {
       .from('contracts')
       .select('*', { count: 'exact', head: true });
 
-    const { count: activeContracts } = await supabase
-      .from('contracts')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'active');
+    const [
+      { count: activeCount },
+      { count: pendingCompletionCount },
+      { count: workSubmittedCount },
+      { count: approvedCount },
+      { count: completedCount },
+      { count: paidCount },
+      { count: cancelledContracts }
+    ] = await Promise.all([
+      supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+      supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('status', 'pending_completion'),
+      supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('status', 'work_submitted'),
+      supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('status', 'approved'),
+      supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
+      supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('status', 'paid'),
+      supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('status', 'cancelled')
+    ]);
 
-    const { count: completedContracts } = await supabase
-      .from('contracts')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'completed');
+    const activeContracts = (activeCount || 0) + (pendingCompletionCount || 0) + (workSubmittedCount || 0);
+    const completedContracts = (approvedCount || 0) + (completedCount || 0) + (paidCount || 0);
 
-    const { count: cancelledContracts } = await supabase
-      .from('contracts')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'cancelled');
+    // Get payment stats from transactions
+    const { data: allTransactions } = await supabase
+      .from('transactions')
+      .select('amount, status, type');
 
-    // Get payment stats
-    const { data: allPayments } = await supabase
-      .from('contract_milestones')
-      .select('amount, payment_status');
-
-    const totalVolume = allPayments?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
-    const pendingPayments = allPayments?.filter(p => p.payment_status === 'pending').reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
+    const totalVolume = allTransactions?.filter(t => t.type === 'escrow_deposit' || t.type === 'deposit').reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0;
+    const pendingPayments = allTransactions?.filter(t => t.status === 'pending').reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0;
 
     // Get disputes stats
     const { count: openDisputes } = await supabase

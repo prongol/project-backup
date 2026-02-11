@@ -46,6 +46,7 @@ export async function GET(request: NextRequest) {
     const [
       { count: totalJobsPosted },
       { count: activeJobs },
+      { count: activeContractsCount },
       { count: totalProposals },
       { data: spending }
     ] = await Promise.all([
@@ -59,6 +60,12 @@ export async function GET(request: NextRequest) {
         .select('*', { count: 'exact', head: true })
         .eq('client_id', clientData?.id || '')
         .eq('status', 'open'),
+
+      supabase
+        .from('contracts')
+        .select('*', { count: 'exact', head: true })
+        .eq('client_id', clientData?.id || '')
+        .in('status', ['active', 'pending_completion']),
       
       supabase
         .from('proposals')
@@ -69,7 +76,7 @@ export async function GET(request: NextRequest) {
         .from('contracts')
         .select('total_amount')
         .eq('client_id', clientData?.id || '')
-        .eq('status', 'completed')
+        .in('status', ['approved', 'completed'])
     ]);
 
     const totalSpending = spending?.reduce((sum, contract) => sum + (contract.total_amount || 0), 0) || 0;
@@ -115,6 +122,7 @@ export async function GET(request: NextRequest) {
       stats: {
         totalJobsPosted: totalJobsPosted || 0,
         activeJobs: activeJobs || 0,
+        activeContractsCount: activeContractsCount || 0,
         totalProposals: totalProposals || 0,
         totalSpending,
       },

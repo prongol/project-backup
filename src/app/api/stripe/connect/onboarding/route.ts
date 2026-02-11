@@ -19,8 +19,8 @@ export async function POST(req: NextRequest) {
     // Verify account belongs to user
     const { data: freelancer, error: freelancerError } = await supabase
       .from('freelancers')
-      .select('id, stripe_connect_account_id')
-      .eq('stripe_connect_account_id', accountId)
+      .select('id, stripe_account_id')
+      .eq('stripe_account_id', accountId)
       .eq('profile_id', user.id)
       .single();
 

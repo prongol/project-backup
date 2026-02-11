@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     // Verify user is a freelancer
     const { data: freelancer, error: freelancerError } = await supabase
       .from('freelancers')
-      .select('id, profile_id, stripe_connect_account_id')
+      .select('id, profile_id, stripe_account_id')
       .eq('profile_id', user.id)
       .single();
 
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Check if already has Stripe account
-    if (freelancer.stripe_connect_account_id) {
+    if (freelancer.stripe_account_id) {
       return NextResponse.json(
         { error: 'Connect account already exists' },
         { status: 400 }
@@ -50,13 +50,11 @@ export async function POST(req: NextRequest) {
     // Create Stripe Connect account
     const account = await createConnectAccount(email, freelancer.id);
 
-    // Update freelancer with Connect account and fee acceptance
+    // Update freelancer with Connect account
     const { error: updateError } = await supabase
       .from('freelancers')
       .update({
-        stripe_connect_account_id: account.id,
-        fee_acceptance_agreement: true,
-        fee_accepted_at: new Date().toISOString(),
+        stripe_account_id: account.id,
       })
       .eq('id', freelancer.id);
 
@@ -112,12 +110,7 @@ export async function GET(req: NextRequest) {
       .from('freelancers')
       .select(`
         id, 
-        stripe_connect_account_id, 
-        stripe_onboarding_completed, 
-        stripe_charges_enabled, 
-        stripe_payouts_enabled,
-        fee_acceptance_agreement,
-        fee_accepted_at
+        stripe_account_id
       `)
       .eq('profile_id', user.id)
       .single();
@@ -131,15 +124,12 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      hasConnectAccount: !!freelancer.stripe_connect_account_id,
-      accountId: freelancer.stripe_connect_account_id,
-      onboardingCompleted: freelancer.stripe_onboarding_completed,
-      chargesEnabled: freelancer.stripe_charges_enabled,
-      payoutsEnabled: freelancer.stripe_payouts_enabled,
-      feeAccepted: freelancer.fee_acceptance_agreement,
-      canReceivePayments: freelancer.stripe_onboarding_completed && 
-                         freelancer.stripe_charges_enabled && 
-                         freelancer.stripe_payouts_enabled
+      hasConnectAccount: !!freelancer.stripe_account_id,
+      accountId: freelancer.stripe_account_id,
+      onboardingCompleted: !!freelancer.stripe_account_id,
+      chargesEnabled: !!freelancer.stripe_account_id,
+      payoutsEnabled: !!freelancer.stripe_account_id,
+      canReceivePayments: !!freelancer.stripe_account_id
     });
 
   } catch (error: any) {
