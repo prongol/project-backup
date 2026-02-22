@@ -27,16 +27,7 @@ export async function GET(request: NextRequest) {
     // Get all conversations where user is a participant
     const { data: conversations, error } = await supabase
       .from('conversations')
-      .select(`
-        *,
-        messages:messages(
-          id,
-          content,
-          created_at,
-          read,
-          sender_id
-        )
-      `)
+      .select('*')
       .or(`participant_1_id.eq.${user.id},participant_2_id.eq.${user.id}`)
       .order('updated_at', { ascending: false });
 
@@ -48,9 +39,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Deduplicate by user pair - keep only the most recent conversation for each pair
+    const userPairMap = new Map();
+    conversations.forEach((conv) => {
+      const otherUserId = conv.participant_1_id === user.id 
+        ? conv.participant_2_id 
+        : conv.participant_1_id;
+      
+      // If we haven't seen this user pair yet, or this conversation is more recent
+      if (!userPairMap.has(otherUserId)) {
+        userPairMap.set(otherUserId, conv);
+      }
+    });
+
+    const uniqueConversations = Array.from(userPairMap.values());
+
     // Get the other participant details for each conversation
     const conversationsWithUsers = await Promise.all(
-      conversations.map(async (conv) => {
+      uniqueConversations.map(async (conv) => {
         const otherUserId = conv.participant_1_id === user.id 
           ? conv.participant_2_id 
           : conv.participant_1_id;
@@ -61,12 +67,16 @@ export async function GET(request: NextRequest) {
           .eq('id', otherUserId)
           .single();
 
-        // Get last message
-        const lastMessage = conv.messages && conv.messages.length > 0
-          ? conv.messages.sort((a: any, b: any) => 
-              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            )[0]
-          : null;
+        // Get last message for this conversation
+        const { data: lastMessageData } = await supabase
+          .from('messages')
+          .select('id, content, created_at, read, sender_id')
+          .eq('conversation_id', conv.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const lastMessage = lastMessageData;
 
         // Count unread messages (not sent by current user)
         const { count: unreadCount } = await supabase

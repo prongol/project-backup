@@ -27,15 +27,25 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { reason } = body;
+    const { reason, duration_days = 30 } = body;
 
-    // Update user status to suspended
+    if (!reason) {
+      return NextResponse.json({ error: 'Suspension reason is required' }, { status: 400 });
+    }
+
+    // Validate duration (20-30 days recommended, max 90)
+    const validDuration = Math.min(Math.max(duration_days, 1), 90);
+    const suspendedUntil = new Date();
+    suspendedUntil.setDate(suspendedUntil.getDate() + validDuration);
+
+    // Update user status to suspended with expiration
     const { error: updateError } = await supabase
       .from('profiles')
       .update({ 
         account_status: 'suspended',
-        suspended_at: new Date().toISOString(),
-        suspension_reason: reason || 'Admin suspension'
+        suspension_reason: reason,
+        suspended_until: suspendedUntil.toISOString(),
+        suspended_by: user.id
       })
       .eq('id', id);
 
@@ -44,10 +54,34 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to suspend user' }, { status: 500 });
     }
 
+    // Notify the suspended user
+    await supabase
+      .from('notifications')
+      .insert({
+        user_id: id,
+        title: '⚠️ Account Suspended',
+        message: `Your account has been suspended for ${validDuration} days. Reason: ${reason}`,
+        type: 'account_alert',
+        link: '/dashboard'
+      });
+
     // Log admin action
     await supabase.from('admin_actions').insert({
       admin_id: user.id,
-      action_type: 'suspend_user',
+      action_type: 'suspended_account',
+      target_user_id: id,
+      reason,
+      details: {
+        duration_days: validDuration,
+        suspended_until: suspendedUntil.toISOString()
+      }
+    });
+
+    return NextResponse.json({ 
+      success: true,
+      message: `User suspended for ${validDuration} days until ${suspendedUntil.toLocaleDateString()}`,
+      suspended_until: suspendedUntil.toISOString()
+    });
       target_type: 'user',
       target_id: id,
       details: { reason: reason || 'Admin suspension' }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { EmailNotifications } from '@/lib/notificationEmails';
 import { notifyContractSigned } from '@/lib/notifications';
 
@@ -54,11 +55,21 @@ export async function POST(
       );
     }
 
+    // Safely extract joined records
+    const freelancer = Array.isArray(contract.freelancer) ? contract.freelancer[0] : contract.freelancer;
+    const client = Array.isArray(contract.client) ? contract.client[0] : contract.client;
+
     // Verify user is part of the contract
-    const isClient = role === 'client' && contract.client.profile_id === user.id;
-    const isFreelancer = role === 'freelancer' && contract.freelancer.profile_id === user.id;
+    const isClient = role === 'client' && client?.profile_id === user.id;
+    const isFreelancer = role === 'freelancer' && freelancer?.profile_id === user.id;
 
     if (!isClient && !isFreelancer) {
+      console.error('Unauthorized sign attempt:', { 
+        role, 
+        clientProfileId: client?.profile_id, 
+        freelancerProfileId: freelancer?.profile_id,
+        userId: user.id 
+      });
       return NextResponse.json(
         { error: 'Unauthorized to sign this contract' },
         { status: 403 }
@@ -109,18 +120,24 @@ export async function POST(
     // If both parties have signed, update status to active
     if (bothSigned) {
       // REQUIREMENT: Escrow must be funded before contract becomes active
-      const { data: escrowAccount } = await supabase
+      // Use admin client to bypass RLS issues that might hide the escrow record
+      const adminSupabase = createAdminClient();
+      const { data: escrowAccount, error: escrowCheckError } = await adminSupabase
         .from('escrow_accounts')
         .select('status')
         .eq('contract_id', id)
         .eq('status', 'held')
-        .single();
+        .maybeSingle();
+
+      if (escrowCheckError) {
+        console.error('Escrow check error:', escrowCheckError);
+      }
 
       if (!escrowAccount) {
         return NextResponse.json(
           { 
             error: 'Escrow not funded', 
-            message: 'The contract cannot be activated until funds are secured in escrow. Please ask the client to secure the funds first.' 
+            message: 'The contract cannot be activated until funds are secured in escrow. Please secure the funds using the Stripe payment modal first.' 
           },
           { status: 400 }
         );
@@ -145,8 +162,8 @@ export async function POST(
 
     // Create notification for the other party
     const otherPartyId = role === 'client' 
-      ? contract.freelancer.profile_id 
-      : contract.client.profile_id;
+      ? freelancer?.profile_id 
+      : client?.profile_id;
 
     // Use the notification library function
     await notifyContractSigned({
@@ -163,13 +180,13 @@ export async function POST(
         const { data: clientProfile } = await supabase
           .from('profiles')
           .select('full_name, email')
-          .eq('id', contract.client.profile_id)
+          .eq('id', client?.profile_id)
           .single();
 
         const { data: freelancerProfile } = await supabase
           .from('profiles')
           .select('full_name')
-          .eq('id', contract.freelancer.profile_id)
+          .eq('id', freelancer?.profile_id)
           .single();
 
         if (clientProfile && freelancerProfile) {

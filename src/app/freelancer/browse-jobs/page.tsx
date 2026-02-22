@@ -567,13 +567,13 @@ export default function BrowseJobsPage() {
                           setSelectedJobForApply(job);
                         }}
                         disabled={!freelancerId}
-                        className="flex-1 px-6 py-3 bg-primary text-gray-100 rounded-lg hover:bg-primary/90 transition-colors font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-6 py-3 bg-primary text-gray-100 rounded-lg hover:bg-primary/90 transition-colors font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Apply Now
                         <ArrowRight className="h-5 w-5" />
                       </button>
                     ) : (
-                      <div className="flex-1 px-6 py-3 bg-green-50 text-green-700 rounded-lg border border-green-200 font-semibold flex items-center justify-center gap-2">
+                      <div className="px-6 py-3 bg-green-50 text-green-700 rounded-lg border border-green-200 font-semibold flex items-center justify-center gap-2">
                         ✓ Applied
                       </div>
                     )}

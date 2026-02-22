@@ -18,7 +18,10 @@ export async function POST(req: NextRequest) {
     
     if (authError || !user) {
       return NextResponse.json(
-        { error: 'Authentication required' },
+        { 
+          error: 'Authentication required', 
+          message: 'You must be logged in to record an escrow payment.' 
+        },
         { status: 401 }
       );
     }
@@ -30,23 +33,38 @@ export async function POST(req: NextRequest) {
       .from('contracts')
       .select(`
         id, client_id, freelancer_id, total_amount,
-        freelancers!inner(id, stripe_account_id),
+        freelancers!inner(id, profile_id, stripe_account_id),
         clients!inner(id, profile_id, stripe_customer_id)
       `)
       .eq('id', contractId)
       .single();
 
     if (contractError || !contract) {
+      console.error('Contract query error:', contractError);
       return NextResponse.json(
-        { error: 'Contract not found' },
+        { 
+          error: 'Contract not found', 
+          message: contractError?.message || 'The specified contract was not found' 
+        },
         { status: 404 }
       );
     }
 
+    // Safely extract joined records (may be array or object depending on Supabase version/naming)
+    const freelancer = Array.isArray(contract.freelancers) ? contract.freelancers[0] : contract.freelancers;
+    const client = Array.isArray(contract.clients) ? contract.clients[0] : contract.clients;
+
     // Verify user is the client
-    if (contract.clients[0]?.profile_id !== user.id) {
+    if (client?.profile_id !== user.id) {
+      console.error('Authorization error: user is not the client', { 
+        clientProfileId: client?.profile_id, 
+        userId: user.id 
+      });
       return NextResponse.json(
-        { error: 'Unauthorized - you are not the client for this contract' },
+        { 
+          error: 'Unauthorized', 
+          message: 'You are not the client for this contract and cannot authorize payment.' 
+        },
         { status: 403 }
       );
     }
@@ -60,21 +78,27 @@ export async function POST(req: NextRequest) {
       
       if (paymentIntent.status !== 'requires_capture' && paymentIntent.status !== 'succeeded') {
         return NextResponse.json(
-          { error: `Payment intent is in invalid status: ${paymentIntent.status}` },
+          { 
+            error: 'Invalid payment status', 
+            message: `Payment intent is in invalid status: ${paymentIntent.status}` 
+          },
           { status: 400 }
         );
       }
     } else {
       // Check if freelancer has completed Connect setup
-      if (!contract.freelancers[0]?.stripe_account_id) {
+      if (!freelancer?.stripe_account_id) {
         return NextResponse.json(
-          { error: 'Freelancer has not completed payment setup. Please ask them to complete their payment information first.' },
+          { 
+            error: 'Freelancer setup incomplete', 
+            message: 'Freelancer has not completed payment setup. Please ask them to complete their payment information first.' 
+          },
           { status: 400 }
         );
       }
 
       // Create/get Stripe customer for client if not exists
-      let customerId = contract.clients[0]?.stripe_customer_id;
+      let customerId = client?.stripe_customer_id;
       if (!customerId) {
         const { data: profile } = await supabase
           .from('profiles')
@@ -101,7 +125,7 @@ export async function POST(req: NextRequest) {
       try {
         paymentIntent = await createConnectEscrowPayment(
           amount,
-          contract.freelancers[0]?.stripe_account_id,
+          freelancer?.stripe_account_id,
           contractId,
           user.id,
           paymentMethodId && paymentMethodId !== 'pm_placeholder' ? paymentMethodId : undefined
@@ -143,18 +167,48 @@ export async function POST(req: NextRequest) {
       ? 'held' 
       : 'pending_payment';
 
-    // Create/update escrow account (use admin client to bypass RLS)
-    const { data: escrowAccount, error: escrowError } = await adminSupabase
+    // Check if escrow account already exists for this contract
+    const { data: existingEscrow } = await adminSupabase
       .from('escrow_accounts')
-      .upsert({
-        contract_id: contractId,
-        total_amount: amount,
-        stripe_payment_intent_id: paymentIntent.id,
-        status: escrowStatus,
-        held_amount: paymentIntent.status === 'requires_capture' ? amount : 0
-      })
-      .select()
-      .single();
+      .select('id')
+      .eq('contract_id', contractId)
+      .maybeSingle();
+
+    let escrowAccount;
+    let escrowError;
+
+    if (existingEscrow) {
+      // Update existing escrow account
+      const result = await adminSupabase
+        .from('escrow_accounts')
+        .update({
+          total_amount: amount,
+          stripe_payment_intent_id: paymentIntent.id,
+          status: escrowStatus,
+          held_amount: escrowStatus === 'held' ? amount : 0,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingEscrow.id)
+        .select()
+        .single();
+      escrowAccount = result.data;
+      escrowError = result.error;
+    } else {
+      // Create new escrow account
+      const result = await adminSupabase
+        .from('escrow_accounts')
+        .insert({
+          contract_id: contractId,
+          total_amount: amount,
+          stripe_payment_intent_id: paymentIntent.id,
+          status: escrowStatus,
+          held_amount: escrowStatus === 'held' ? amount : 0
+        })
+        .select()
+        .single();
+      escrowAccount = result.data;
+      escrowError = result.error;
+    }
 
     if (escrowError) {
       console.error('Escrow creation error:', escrowError);
@@ -170,7 +224,7 @@ export async function POST(req: NextRequest) {
       .insert({
         contract_id: contractId,
         from_user_id: user.id,
-        to_user_id: contract.freelancer_id,
+        to_user_id: freelancer.profile_id,
         amount: amount,
         type: 'escrow_deposit',
         status: paymentIntent.status === 'requires_capture' || paymentIntent.status === 'succeeded' ? 'completed' : 'pending',
@@ -221,7 +275,10 @@ export async function PUT(req: NextRequest) {
     
     if (authError || !user) {
       return NextResponse.json(
-        { error: 'Authentication required' },
+        { 
+          error: 'Authentication required', 
+          message: 'You must be logged in to release or refund an escrow payment.' 
+        },
         { status: 401 }
       );
     }

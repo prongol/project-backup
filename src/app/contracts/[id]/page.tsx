@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import {
@@ -47,6 +47,8 @@ interface Contract {
   description: string;
   contract_type: 'fixed_price' | 'hourly' | 'milestone';
   total_amount: number;
+  client_id?: string;
+  freelancer_id?: string;
   platform_fee_percentage?: number;
   platform_fee_amount?: number;
   freelancer_net_amount?: number;
@@ -102,7 +104,8 @@ interface Contract {
   escrow_funded?: boolean;
 }
 
-export default function ContractDetailPage({ params }: { params: { id: string } }) {
+export default function ContractDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: contractId } = use(params);
   const { user } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -112,9 +115,12 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showRejectionModal, setShowRejectionModal] = useState(false);
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
   const [completionNote, setCompletionNote] = useState('');
   const [approvalNote, setApprovalNote] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
+  const [disputeType, setDisputeType] = useState('quality_issue');
+  const [disputeReason, setDisputeReason] = useState('');
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
   const [contract, setContract] = useState<Contract | null>(null);
@@ -134,13 +140,13 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
     }
     fetchContract();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, params.id]);
+  }, [user, contractId]);
 
   const fetchContract = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`/api/contracts/${params.id}`, {
+      const response = await fetch(`/api/contracts/${contractId}`, {
         credentials: 'include'
       });
 
@@ -301,6 +307,45 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
     } catch (error) {
       console.error('Error requesting revision:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to request revision');
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  const handleFileDispute = async () => {
+    if (!disputeReason.trim()) {
+      toast.error('Please provide a reason for the dispute');
+      return;
+    }
+
+    try {
+      setApproving(true);
+      const response = await fetch(`/api/contracts/${contract?.id}/dispute`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          dispute_type: disputeType,
+          reason: disputeReason,
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to file dispute');
+      }
+
+      toast.success('Dispute filed! An admin will review your case.');
+      setShowDisputeModal(false);
+      setDisputeReason('');
+      setDisputeType('quality_issue');
+      fetchContract();
+    } catch (error) {
+      console.error('Error filing dispute:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to file dispute');
     } finally {
       setApproving(false);
     }
@@ -557,7 +602,7 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
             {/* Description */}
             <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Description</h2>
-              <p className="text-gray-700 whitespace-pre-wrap">{contract.description}</p>
+              <p className="text-gray-700 whitespace-pre-wrap break-words overflow-wrap-anywhere">{contract.description}</p>
             </div>
 
             {/* Job Details */}
@@ -568,8 +613,8 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
                   Related Job
                 </h2>
                 <div className="space-y-2">
-                  <p className="font-medium text-gray-900">{contract.jobs.title}</p>
-                  <p className="text-sm text-gray-600">{contract.jobs.description}</p>
+                  <p className="font-medium text-gray-900 break-words">{contract.jobs.title}</p>
+                  <p className="text-sm text-gray-600 break-words overflow-wrap-anywhere">{contract.jobs.description}</p>
                   <div className="flex items-center gap-2 mt-3">
                     <span className="text-sm text-gray-600">Category:</span>
                     <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-sm">
@@ -901,6 +946,48 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
               </div>
             </div>
 
+            {/* Revision Feedback - Show when work was rejected */}
+            {contract.rejection_reason && contract.status === 'active' && (
+              <div className="bg-yellow-50 rounded-lg shadow-sm p-6 border-2 border-yellow-300">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0">
+                    <AlertCircle className="h-6 w-6 text-yellow-600" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-lg font-semibold text-yellow-900">
+                        Revision Requested
+                      </h3>
+                      {contract.revision_count >= 1 && (
+                        <span className="text-xs font-semibold text-red-600 bg-red-100 px-2 py-1 rounded">
+                          Dispute available
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-yellow-800 mb-3">
+                      The client has requested changes to the submitted work. {contract.revision_count >= 1 ? 'You can resubmit or file a dispute if you disagree.' : 'Please review the feedback below and resubmit.'}
+                    </p>
+                    <div className="bg-white rounded-lg p-4 border border-yellow-200">
+                      <p className="text-sm font-medium text-gray-700 mb-1">Client Feedback:</p>
+                      <p className="text-gray-900 whitespace-pre-wrap break-words overflow-wrap-anywhere">{contract.rejection_reason}</p>
+                    </div>
+                    {contract.rejected_at && (
+                      <p className="text-xs text-yellow-700 mt-2">
+                        Rejected on {new Date(contract.rejected_at).toLocaleString()}
+                      </p>
+                    )}
+                    {contract.revision_count >= 1 && (
+                      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="text-sm text-blue-800 font-medium">
+                          💡 Work has been rejected. If you believe the rejection is unfair, you can file a dispute instead of resubmitting.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Actions */}
             <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Actions</h2>
@@ -1016,8 +1103,17 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
                       className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 font-semibold"
                     >
                       <XCircle className="h-5 w-5" />
-                      Request Revision
+                      Request Revision{contract.revision_count > 0 && ` (Revision #${contract.revision_count + 1})`}
                     </button>
+                    {contract.revision_count >= 1 && (
+                      <button
+                        onClick={() => setShowDisputeModal(true)}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
+                      >
+                        <AlertCircle className="h-5 w-5" />
+                        File Dispute
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -1035,14 +1131,14 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
                 {contract.rejection_reason && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
                     <p className="text-sm font-medium text-red-800">Revision Requested:</p>
-                    <p className="text-sm text-red-700 mt-1">{contract.rejection_reason}</p>
+                    <p className="text-sm text-red-700 mt-1 break-words overflow-wrap-anywhere">{contract.rejection_reason}</p>
                   </div>
                 )}
 
                 {contract.completion_note && (
                   <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
                     <p className="text-sm font-medium text-gray-800">Completion Note:</p>
-                    <p className="text-sm text-gray-700 mt-1">{contract.completion_note}</p>
+                    <p className="text-sm text-gray-700 mt-1 break-words">{contract.completion_note}</p>
                   </div>
                 )}
 
@@ -1198,6 +1294,91 @@ export default function ContractDetailPage({ params }: { params: { id: string } 
                   onClick={() => {
                     setShowRejectionModal(false);
                     setRejectionReason('');
+                  }}
+                  disabled={approving}
+                  className="flex-1 px-4 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* File Dispute Modal */}
+        {showDisputeModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-md w-full p-6">
+              <h3 className="text-xl font-bold text-red-600 mb-2 flex items-center gap-2">
+                <AlertCircle className="h-6 w-6" />
+                File Dispute
+              </h3>
+              <p className="text-gray-600 mb-4">
+                This will escalate the issue to an admin for resolution. Both parties will be notified.
+              </p>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Dispute Type
+                </label>
+                <select
+                  value={disputeType}
+                  onChange={(e) => setDisputeType(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                >
+                  <option value="quality_issue">Quality of Work Issue</option>
+                  <option value="payment_issue">Payment Issue</option>
+                  <option value="scope_change">Scope Change Dispute</option>
+                  <option value="delivery_issue">Delivery/Timeline Issue</option>
+                  <option value="refund_request">Refund Request</option>
+                  <option value="abandoned_work">Work Abandoned</option>
+                </select>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Detailed Explanation *
+                </label>
+                <textarea
+                  value={disputeReason}
+                  onChange={(e) => setDisputeReason(e.target.value)}
+                  placeholder="Please provide a detailed explanation of the dispute..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  rows={5}
+                  required
+                />
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                <p className="text-xs text-yellow-800">
+                  <strong>Note:</strong> Filing a dispute will pause the contract and notify an admin. 
+                  Please ensure you've tried to resolve the issue directly first.
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleFileDispute}
+                  disabled={approving || !disputeReason.trim()}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {approving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Filing...
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle className="h-4 w-4" />
+                      File Dispute
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDisputeModal(false);
+                    setDisputeReason('');
+                    setDisputeType('quality_issue');
                   }}
                   disabled={approving}
                   className="flex-1 px-4 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"

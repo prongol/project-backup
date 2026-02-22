@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { EmailNotifications } from '@/lib/notificationEmails';
 
 // GET /api/contracts/[id] - Get single contract
@@ -91,12 +92,13 @@ export async function GET(
       .eq('contract_id', id)
       .order('created_at', { ascending: true });
 
-    // Get escrow status
-    const { data: escrowAccount } = await supabase
+    // Get escrow status using admin client to bypass RLS
+    const adminSupabase = createAdminClient();
+    const { data: escrowAccount } = await adminSupabase
       .from('escrow_accounts')
       .select('status, held_amount')
       .eq('contract_id', id)
-      .single();
+      .maybeSingle();
 
     return NextResponse.json({ 
       contract: {

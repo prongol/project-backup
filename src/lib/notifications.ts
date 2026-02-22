@@ -119,7 +119,7 @@ export async function notifyJobApplication(params: {
     type: 'job_application',
     title: 'New Application Received! 👤',
     message: `${params.freelancerName} has applied to your job "${params.jobTitle}".`,
-    link: `/client/jobs/${params.jobId}/proposals`
+    link: `/client/proposals?job=${params.jobId}`
   });
 }
 
@@ -136,7 +136,7 @@ export async function notifyApplicationAccepted(params: {
     type: 'application_accepted',
     title: 'Application Accepted! 🎉',
     message: `Congratulations! Your application for "${params.jobTitle}" has been accepted.`,
-    link: `/freelancer/proposals`
+    link: `/freelancer/my-proposals`
   });
 }
 
@@ -182,13 +182,14 @@ export async function notifyProposalReceived(params: {
   jobTitle: string;
   proposalAmount: number;
   jobId: string;
+  conversationId?: string;
 }) {
   return sendNotification({
     user_id: params.clientProfileId,
     type: 'proposal_received',
     title: 'New Proposal Received! 📝',
     message: `${params.freelancerName} sent a proposal for "${params.jobTitle}" ($${params.proposalAmount}).`,
-    link: `/client/jobs/${params.jobId}/proposals`
+    link: params.conversationId ? `/communication?conversationId=${params.conversationId}` : `/client/proposals?job=${params.jobId}`
   });
 }
 

@@ -212,6 +212,8 @@ export async function PUT(
       .update({
         status: 'active',
         rejection_reason,
+        rejected_at: now,
+        revision_count: (contract.revision_count || 0) + 1,
         completed_at: null,
         updated_at: now
       })

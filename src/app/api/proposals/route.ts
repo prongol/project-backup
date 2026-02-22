@@ -279,7 +279,8 @@ export async function POST(request: Request) {
         freelancerName: freelancerName,
         jobTitle: job.title,
         proposalAmount: parseFloat(proposed_budget),
-        jobId: job_id
+        jobId: job_id,
+        conversationId: conversationId || undefined
       });
     } catch (notificationError) {
       console.error('Error creating notification:', notificationError);
