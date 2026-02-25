@@ -323,7 +323,7 @@ export default function CommunicationPage() {
       {/* Sidebar - Conversation List */}
       <div className={`${
         selectedConversationId ? 'hidden md:flex' : 'flex'
-      } w-full md:w-80 lg:w-96 flex-col bg-white border-r border-gray-200 shadow-sm`}>
+      } w-full md:w-80 lg:w-96 flex-shrink-0 flex-col bg-white border-r border-gray-200 shadow-sm overflow-hidden`}>
         {/* Search Header */}
         <div className="p-3 md:p-4 border-b border-gray-200 bg-white sticky top-0 z-10">
           <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
@@ -433,7 +433,7 @@ export default function CommunicationPage() {
       </div>
 
       {/* Main Chat Area */}
-      <div className={`flex-1 flex flex-col bg-white ${
+      <div className={`flex-1 min-w-0 flex flex-col bg-white overflow-hidden ${
         !selectedConversationId ? 'hidden md:flex' : 'flex'
       }`}>
         {selectedConversation ? (

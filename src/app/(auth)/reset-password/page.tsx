@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Manrope } from 'next/font/google';
@@ -12,9 +12,10 @@ const manrope = Manrope({
   weight: ['400', '500', '600', '700'],
 });
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const token = searchParams.get('token');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -24,13 +25,12 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Check if we have a valid access token from the reset link
-    const accessToken = searchParams.get('access_token');
-    if (!accessToken) {
-      toast.error('Invalid reset link. Please request a new one.');
-      router.push('/forgot-password');
+    // Check if token is present
+    if (!token) {
+      setError('Invalid reset link. Please request a new password reset.');
+      toast.error('Invalid reset link');
     }
-  }, [searchParams, router]);
+  }, [token]);
 
   const validatePassword = () => {
     if (password.length < 8) {
@@ -48,6 +48,11 @@ export default function ResetPasswordPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!token) {
+      setError('Invalid reset link. Please request a new password reset.');
+      return;
+    }
+
     if (!validatePassword()) {
       return;
     }
@@ -58,7 +63,7 @@ export default function ResetPasswordPage() {
       const response = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password, confirmPassword }),
+        body: JSON.stringify({ token, password }),
       });
 
       const data = await response.json();
@@ -229,5 +234,24 @@ export default function ResetPasswordPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={
+      <div className={`${manrope.className} min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-[#0CF574]/5 to-background px-4`}>
+        <div className="max-w-md w-full">
+          <div className="bg-white rounded-3xl shadow-xl p-8 md:p-12 border border-gray-100 text-center">
+            <div className="animate-pulse space-y-4">
+              <div className="h-8 bg-gray-200 rounded w-3/4 mx-auto"></div>
+              <div className="h-4 bg-gray-200 rounded w-1/2 mx-auto"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    }>
+      <ResetPasswordContent />
+    </Suspense>
   );
 }

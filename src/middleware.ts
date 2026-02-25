@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
   // Quick check: Skip auth for public routes entirely
-  const publicRoutes = ['/', '/login', '/register', '/forgot-password', '/register-freelancer', '/search', '/auth/callback', '/auth/verify-email']
+  const publicRoutes = ['/', '/login', '/register', '/forgot-password', '/reset-password', '/register-freelancer', '/search', '/auth/callback', '/auth/verify-email']
   const isPublicRoute = publicRoutes.some(route => 
     request.nextUrl.pathname === route || 
     request.nextUrl.pathname.startsWith('/api/auth') ||

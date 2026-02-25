@@ -130,9 +130,69 @@ function CreateContractForm() {
       }
     }
     
+    // Validate dates
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Reset time to start of day
+    
+    if (formData.start_date) {
+      const startDate = new Date(formData.start_date);
+      if (startDate < today) {
+        toast.error('Start date cannot be in the past');
+        return false;
+      }
+    }
+    
+    if (formData.end_date) {
+      const endDate = new Date(formData.end_date);
+      if (endDate < today) {
+        toast.error('End date cannot be in the past');
+        return false;
+      }
+      
+      if (formData.start_date) {
+        const startDate = new Date(formData.start_date);
+        if (endDate <= startDate) {
+          toast.error('End date must be after start date');
+          return false;
+        }
+      }
+    }
+    
+    // Validate milestones
     if (formData.contract_type === 'milestone' && formData.milestones.length === 0) {
       toast.error('Please add at least one milestone for milestone-based contracts');
       return false;
+    }
+    
+    // Validate milestone dates
+    if (formData.milestones.length > 0) {
+      for (let i = 0; i < formData.milestones.length; i++) {
+        const milestone = formData.milestones[i];
+        
+        if (milestone.due_date) {
+          const dueDate = new Date(milestone.due_date);
+          if (dueDate < today) {
+            toast.error(`Milestone ${i + 1} due date cannot be in the past`);
+            return false;
+          }
+          
+          if (formData.start_date) {
+            const startDate = new Date(formData.start_date);
+            if (dueDate < startDate) {
+              toast.error(`Milestone ${i + 1} due date must be on or after contract start date`);
+              return false;
+            }
+          }
+          
+          if (formData.end_date) {
+            const endDate = new Date(formData.end_date);
+            if (dueDate > endDate) {
+              toast.error(`Milestone ${i + 1} due date must be on or before contract end date`);
+              return false;
+            }
+          }
+        }
+      }
     }
     
     return true;
@@ -367,8 +427,10 @@ function CreateContractForm() {
                 type="date"
                 value={formData.start_date}
                 onChange={(e) => setFormData(prev => ({ ...prev, start_date: e.target.value }))}
+                min={new Date().toISOString().split('T')[0]}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
               />
+              <p className="text-xs text-gray-500 mt-1">Must be today or later</p>
             </div>
             <div>
               <label className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
@@ -379,8 +441,10 @@ function CreateContractForm() {
                 type="date"
                 value={formData.end_date}
                 onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))}
+                min={formData.start_date || new Date().toISOString().split('T')[0]}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
               />
+              <p className="text-xs text-gray-500 mt-1">Must be after start date</p>
             </div>
           </div>
 
@@ -480,12 +544,17 @@ function CreateContractForm() {
                         placeholder="Amount (USD)"
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                       />
-                      <input
-                        type="date"
-                        value={milestone.due_date}
-                        onChange={(e) => handleMilestoneChange(index, 'due_date', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
+                      <div>
+                        <input
+                          type="date"
+                          value={milestone.due_date}
+                          onChange={(e) => handleMilestoneChange(index, 'due_date', e.target.value)}
+                          min={formData.start_date || new Date().toISOString().split('T')[0]}
+                          max={formData.end_date || undefined}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Between contract dates</p>
+                      </div>
                     </div>
                   </div>
                 </div>

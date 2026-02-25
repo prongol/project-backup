@@ -3,17 +3,15 @@
 import { useState } from 'react';
 import { Mail, CheckCircle, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import toast from 'react-hot-toast';
+import { toast } from 'sonner';
 
 export default function VerifyEmailPage() {
   const [resending, setResending] = useState(false);
-  const supabase = createClientComponentClient();
 
   const handleResendEmail = async () => {
     setResending(true);
     try {
-      // Get the current user's email from the URL or localStorage
+      // Get the current user's email from localStorage
       const email = localStorage.getItem('pendingVerificationEmail');
       
       if (!email) {
@@ -21,18 +19,21 @@ export default function VerifyEmailPage() {
         return;
       }
 
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email: email,
+      const response = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
       });
 
-      if (error) {
-        toast.error(error.message);
-      } else {
-        toast.success('Verification email sent! Please check your inbox.');
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to resend verification email');
       }
-    } catch (error) {
-      toast.error('Failed to resend email. Please try again.');
+
+      toast.success('Verification email sent! Please check your inbox.');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to resend email. Please try again.');
     } finally {
       setResending(false);
     }

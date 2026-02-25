@@ -16,30 +16,43 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const { id: contractId } = await params;
-    const { disputeType, reason, evidence, amountDisputed } = await req.json();
+    const body = await req.json();
+    const disputeType = body.dispute_type || body.disputeType;
+    const reason = body.reason;
+    const evidence = body.evidence;
+    const amountDisputed = body.amount_disputed || body.amountDisputed;
 
-    // Verify contract and user authorization
+    // Verify contract exists and user authorization
+    // Join with clients and freelancers to get profile_id for authorization
     const { data: contract, error: contractError } = await supabase
       .from('contracts')
       .select(`
-        id, client_id, freelancer_id, total_amount, status,
-        client_requirements, deliverable_checklist,
-        clients!inner(profile_id),
-        freelancers!inner(profile_id)
+        id, 
+        client_id, 
+        freelancer_id, 
+        total_amount, 
+        status,
+        clients!contracts_client_id_fkey(profile_id),
+        freelancers!contracts_freelancer_id_fkey(profile_id)
       `)
       .eq('id', contractId)
       .single();
 
     if (contractError || !contract) {
+      console.error('Contract fetch error:', contractError);
       return NextResponse.json(
         { error: 'Contract not found' },
         { status: 404 }
       );
     }
 
-    // Verify user is part of the contract
-    const isClient = contract.clients[0]?.profile_id === user.id;
-    const isFreelancer = contract.freelancers[0]?.profile_id === user.id;
+    // Verify user is part of the contract (either client or freelancer)
+    // Compare with profile_id from joined tables
+    const clientProfileId = (contract.clients as any)?.profile_id;
+    const freelancerProfileId = (contract.freelancers as any)?.profile_id;
+    
+    const isClient = clientProfileId === user.id;
+    const isFreelancer = freelancerProfileId === user.id;
     
     if (!isClient && !isFreelancer) {
       return NextResponse.json(
@@ -49,24 +62,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     // Create dispute
+    const disputeData = {
+      contract_id: contractId,
+      opened_by: user.id,
+      dispute_type: disputeType,
+      reason: reason,
+      evidence: evidence || [],
+      amount_disputed: amountDisputed,
+      status: 'open'
+    };
+    
+    console.log('Creating dispute with data:', disputeData);
+    
     const { data: dispute, error: disputeError } = await supabase
       .from('contract_disputes')
-      .insert({
-        contract_id: contractId,
-        opened_by: user.id,
-        dispute_type: disputeType,
-        reason: reason,
-        evidence: evidence || [],
-        amount_disputed: amountDisputed,
-        status: 'open'
-      })
+      .insert(disputeData)
       .select()
       .single();
 
     if (disputeError) {
       console.error('Dispute creation error:', disputeError);
+      console.error('User ID:', user.id);
+      console.error('Contract ID:', contractId);
       return NextResponse.json(
-        { error: 'Failed to create dispute' },
+        { error: 'Failed to create dispute', details: disputeError.message },
         { status: 500 }
       );
     }
@@ -85,21 +104,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await supabase
         .from('dispute_evidence')
         .insert(evidenceRecords);
-    }
-
-    // Create requirement verifications for admin review
-    if (contract.client_requirements && typeof contract.client_requirements === 'object') {
-      const requirements = Object.entries(contract.client_requirements);
-      const verificationRecords = requirements.map(([key, value]) => ({
-        contract_id: contractId,
-        requirement_id: key,
-        requirement_text: value as string,
-        verification_status: 'pending'
-      }));
-
-      await supabase
-        .from('requirement_verifications')
-        .insert(verificationRecords);
     }
 
     // Update contract status and PAUSE auto-release timer
@@ -123,7 +127,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .single();
 
     // Notify the other party
-    const otherPartyId = isClient ? contract.freelancers[0]?.profile_id : contract.clients[0]?.profile_id;
+    const otherPartyId = isClient ? contract.freelancer_id : contract.client_id;
     if (otherPartyId && contractData) {
       await notifyDisputeFiled({
         recipientProfileId: otherPartyId,

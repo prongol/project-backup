@@ -70,41 +70,38 @@ export default function BrowseJobsPage() {
       setCurrentUser(user);
       
       // Get freelancer ID from the database
+      let resolvedFreelancerId: string | null = null;
       const response = await fetch(`/api/freelancers?profileId=${user.id}`);
       if (response.ok) {
         const data = await response.json();
         if (data.freelancer) {
-          setFreelancerId(data.freelancer.id);
+          resolvedFreelancerId = data.freelancer.id;
+          setFreelancerId(resolvedFreelancerId);
         }
       }
       
       loadSavedJobs();
+      // Pass freelancerId directly so hasApplied flags are always correct
+      loadJobs(resolvedFreelancerId);
     }
     
     initializeUser();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load jobs when freelancerId is available
-  useEffect(() => {
-    if (freelancerId) {
-      loadJobs();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [freelancerId]);
-
   useEffect(() => {
     filterJobs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, selectedCategory, minBudget, sortBy, jobs]);
 
-  const loadJobs = async () => {
+  const loadJobs = async (fId?: string | null) => {
     try {
       setLoading(true);
 
       // Fetch jobs through API route - include freelancerId if available to check applied status
-      const url = freelancerId 
-        ? `/api/jobs?status=open&freelancerId=${freelancerId}`
+      const effectiveFreelancerId = fId ?? freelancerId;
+      const url = effectiveFreelancerId 
+        ? `/api/jobs?status=open&freelancerId=${effectiveFreelancerId}`
         : '/api/jobs?status=open';
       
       const response = await fetch(url);
@@ -251,8 +248,8 @@ export default function BrowseJobsPage() {
       });
       setSelectedJobForApply(null);
       
-      // Refresh jobs to update proposal counts
-      await loadJobs();
+      // Refresh jobs to update applied status
+      await loadJobs(freelancerId);
     } catch (error: any) {
       toast.error(error.message || 'Failed to submit proposal');
       throw error;

@@ -29,6 +29,7 @@ interface ProposalData {
   budget?: string;
   duration?: string;
   coverLetter?: string;
+  status?: 'pending' | 'accepted' | 'rejected';
 }
 
 interface ContractData {
@@ -68,6 +69,9 @@ export default function ChatBox({
   const [conversationId, setConversationId] = useState(initialConversationId);
   const [processingProposal, setProcessingProposal] = useState<string | null>(null);
   const [showContractOptions, setShowContractOptions] = useState<string | null>(null);
+  const [rejectedProposals, setRejectedProposals] = useState<Set<string>>(new Set());
+  const [acceptedProposals, setAcceptedProposals] = useState<Set<string>>(new Set());
+  const [declineConfirmId, setDeclineConfirmId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
@@ -122,14 +126,19 @@ export default function ChatBox({
   // Handle proposal approval
   const handleApproveProposal = async (proposalId: string) => {
     setShowContractOptions(proposalId);
+    setAcceptedProposals(prev => new Set(prev).add(proposalId));
   };
 
-  // Handle proposal rejection
-  const handleRejectProposal = async (proposalId: string) => {
-    if (!confirm('Are you sure you want to reject this proposal?')) {
-      return;
-    }
+  // Handle proposal rejection - open confirmation modal
+  const handleRejectProposal = (proposalId: string) => {
+    setDeclineConfirmId(proposalId);
+  };
 
+  // Actual rejection after user confirms in modal
+  const confirmRejectProposal = async () => {
+    const proposalId = declineConfirmId;
+    if (!proposalId) return;
+    setDeclineConfirmId(null);
     setProcessingProposal(proposalId);
     try {
       const response = await fetch(`/api/proposals/${proposalId}`, {
@@ -142,9 +151,8 @@ export default function ChatBox({
         throw new Error('Failed to reject proposal');
       }
 
-      toast.success('Proposal rejected');
-      // Optionally send a message to the freelancer
-      await sendSystemMessage('Your proposal has been declined. Thank you for your interest.');
+      toast.success('Proposal declined.');
+      setRejectedProposals(prev => new Set(prev).add(proposalId));
     } catch (error) {
       console.error('Error rejecting proposal:', error);
       toast.error('Failed to reject proposal');
@@ -431,7 +439,7 @@ export default function ChatBox({
       {/* Messages Container */}
       <div
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto p-3 md:p-4 lg:p-6 space-y-3 md:space-y-4 bg-gradient-to-b from-gray-50/30 to-white"
+        className="flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-4 lg:p-6 space-y-3 md:space-y-4 bg-gradient-to-b from-gray-50/30 to-white"
       >
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
@@ -627,14 +635,22 @@ export default function ChatBox({
                       {proposalData.coverLetter && (
                         <div className="mb-4 p-4 bg-white rounded-lg border border-blue-100">
                           <p className="text-xs font-semibold text-gray-600 mb-2">Cover Letter</p>
-                          <p className="text-sm text-gray-700 line-clamp-3">
+                          <p className="text-sm text-gray-700 line-clamp-3 break-words overflow-hidden">
                             {proposalData.coverLetter}
                           </p>
                         </div>
                       )}
 
+                      {/* Declined Badge */}
+                      {rejectedProposals.has(proposalData.proposalId!) && (
+                        <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg mb-3">
+                          <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+                          <span className="text-sm font-semibold text-red-700">Proposal Declined</span>
+                        </div>
+                      )}
+
                       {/* Action Buttons */}
-                      {showContractOptions === proposalData.proposalId ? (
+                      {!rejectedProposals.has(proposalData.proposalId!) && showContractOptions === proposalData.proposalId ? (
                         <div className="space-y-3">
                           <div className="p-4 bg-blue-100 rounded-lg border-2 border-blue-300">
                             <div className="flex items-center gap-2 mb-3">
@@ -821,6 +837,47 @@ export default function ChatBox({
           </button>
         </div>
       </form>
+
+      {/* Decline Confirmation Modal */}
+      {declineConfirmId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setDeclineConfirmId(null)}
+          />
+          {/* Modal */}
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-in fade-in zoom-in-95 duration-200">
+            {/* Icon */}
+            <div className="flex items-center justify-center w-14 h-14 rounded-full bg-red-100 mx-auto mb-4">
+              <XCircle className="w-8 h-8 text-red-500" />
+            </div>
+            {/* Text */}
+            <h3 className="text-lg font-bold text-gray-900 text-center mb-2">
+              Decline Proposal?
+            </h3>
+            <p className="text-sm text-gray-500 text-center mb-6 leading-relaxed">
+              The freelancer will be notified and an email will be sent. This action cannot be undone.
+            </p>
+            {/* Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeclineConfirmId(null)}
+                className="flex-1 py-2.5 px-4 border border-gray-300 text-gray-700 font-semibold rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRejectProposal}
+                className="flex-1 py-2.5 px-4 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                <XCircle className="w-4 h-4" />
+                Yes, Decline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

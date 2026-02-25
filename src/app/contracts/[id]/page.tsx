@@ -173,7 +173,7 @@ export default function ContractDetailPage({ params }: { params: Promise<{ id: s
     }
   };
 
-  const handleSign = async () => {
+  const handleSign = async (signature: string) => {
     if (!contract || !userRole) return;
 
     try {
@@ -185,7 +185,8 @@ export default function ContractDetailPage({ params }: { params: Promise<{ id: s
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          role: userRole
+          role: userRole,
+          signature
         })
       });
 
@@ -1151,6 +1152,26 @@ export default function ContractDetailPage({ params }: { params: Promise<{ id: s
                 >
                   <MessageSquare className="h-5 w-5" />
                   Message {userRole === 'client' ? 'Freelancer' : 'Client'}
+                </button>
+
+                {/* File Dispute Button - Available for active contracts */}
+                {(contract.status === 'active' || contract.status === 'pending_completion') && (
+                  <button
+                    onClick={() => setShowDisputeModal(true)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
+                  >
+                    <AlertCircle className="h-5 w-5" />
+                    File Dispute
+                  </button>
+                )}
+
+                {/* Contact Admin Button */}
+                <button
+                  onClick={() => router.push('/support')}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 font-medium"
+                >
+                  <MessageSquare className="h-5 w-5" />
+                  Contact Admin Support
                 </button>
 
                 <button

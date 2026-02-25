@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 
-export default function AuthCallbackPage() {
+function AuthCallbackContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -15,10 +15,43 @@ export default function AuthCallbackPage() {
   useEffect(() => {
     const verifyEmail = async () => {
       try {
-        // Get the token hash from URL
+        // Get the token hash and type from URL
         const tokenHash = searchParams.get('token_hash');
         const type = searchParams.get('type');
 
+        // Handle password recovery
+        if (type === 'recovery') {
+          setMessage('Verifying password reset link...');
+          
+          if (!tokenHash) {
+            setStatus('error');
+            setMessage('Invalid password reset link. Please request a new one.');
+            return;
+          }
+
+          // Verify the recovery token
+          const { error } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: 'recovery',
+          });
+
+          if (error) {
+            console.error('Password reset verification error:', error);
+            setStatus('error');
+            setMessage('Invalid or expired reset link. Please request a new one.');
+            return;
+          }
+
+          // Success! Redirect to reset password page
+          setStatus('success');
+          setMessage('Link verified! Redirecting to reset password...');
+          setTimeout(() => {
+            router.push('/reset-password');
+          }, 1500);
+          return;
+        }
+
+        // Handle email verification
         if (!tokenHash || type !== 'email') {
           setStatus('error');
           setMessage('Invalid verification link. Please try again.');
@@ -118,5 +151,20 @@ export default function AuthCallbackPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 text-primary animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    }>
+      <AuthCallbackContent />
+    </Suspense>
   );
 }

@@ -82,12 +82,6 @@ export async function POST(
       message: `User suspended for ${validDuration} days until ${suspendedUntil.toLocaleDateString()}`,
       suspended_until: suspendedUntil.toISOString()
     });
-      target_type: 'user',
-      target_id: id,
-      details: { reason: reason || 'Admin suspension' }
-    });
-
-    return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Unexpected error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

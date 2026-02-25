@@ -242,7 +242,7 @@ export default function FreelancerBrowseJobsPage() {
               </div>
               
               {/* Job Description */}
-              <p className="text-gray-700 mb-4 line-clamp-3">{job.description}</p>
+              <p className="text-gray-700 mb-4 line-clamp-3 break-words overflow-hidden">{job.description}</p>
               
               {/* Skills */}
               <div className="flex flex-wrap gap-2 mb-4">

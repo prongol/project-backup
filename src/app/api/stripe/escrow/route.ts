@@ -240,6 +240,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Update contract with stripe_payment_intent_id and payment status
+    await adminSupabase
+      .from('contracts')
+      .update({
+        stripe_payment_intent_id: paymentIntent.id,
+        payment_status: escrowStatus,
+        payment_amount: amount,
+        platform_fee: (amount * 7) / 100,
+        freelancer_amount: amount - (amount * 7) / 100, // Syncing with legacy column if exists
+        freelancer_net_amount: amount - (amount * 7) / 100,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', contractId);
+
     return NextResponse.json({
       success: true,
       paymentId: paymentIntent.id,

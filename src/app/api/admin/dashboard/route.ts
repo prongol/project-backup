@@ -128,6 +128,42 @@ export async function GET(request: Request) {
       .select('*', { count: 'exact', head: true })
       .eq('status', 'resolved');
 
+    // Get date-based stats
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+    const { count: newUsersThisMonth } = await supabase
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', startOfMonth);
+
+    const { count: contractsCreatedToday } = await supabase
+      .from('contracts')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', startOfToday);
+
+    const { data: paymentsToday } = await supabase
+      .from('transactions')
+      .select('amount')
+      .gte('created_at', startOfToday)
+      .in('status', ['completed', 'released']);
+
+    const paymentsProcessedToday = paymentsToday?.reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0;
+
+    const { count: messagesExchangedToday } = await supabase
+      .from('messages')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', startOfToday);
+
+    const { data: completedPaymentsThisMonth } = await supabase
+      .from('transactions')
+      .select('amount')
+      .gte('created_at', startOfMonth)
+      .in('status', ['completed', 'released']);
+
+    const completedVolumeThisMonth = completedPaymentsThisMonth?.reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0;
+
     // Calculate summary statistics with enhanced stats
     const stats = {
       // Legacy stats for backward compatibility
@@ -147,7 +183,7 @@ export async function GET(request: Request) {
         total: totalUsers || 0,
         active: activeUsers || 0,
         suspended: suspendedUsers || 0,
-        newThisMonth: 0, // TODO: Calculate from created_at
+        newThisMonth: newUsersThisMonth || 0,
         freelancers: freelancers || 0,
         clients: clients || 0,
       },
@@ -161,9 +197,9 @@ export async function GET(request: Request) {
       payments: {
         totalVolume: totalVolume,
         pendingPayments: pendingPayments,
-        completedThisMonth: 0, // TODO: Calculate from released_at
+        completedThisMonth: completedVolumeThisMonth,
         averageContractValue: totalContracts ? Math.round(totalVolume / totalContracts) : 0,
-        escrowBalance: pendingPayments, // Simplified
+        escrowBalance: pendingPayments,
       },
       disputes: {
         total: (openDisputes || 0) + (resolvedDisputes || 0),
@@ -172,10 +208,10 @@ export async function GET(request: Request) {
         pending: openDisputes || 0,
       },
       activity: {
-        activeUsersToday: 0, // TODO: Track last_seen
-        contractsCreatedToday: 0, // TODO: Filter by created_at today
-        paymentsProcessedToday: 0, // TODO: Filter by released_at today
-        messagesExchangedToday: 0, // TODO: Track messages
+        activeUsersToday: activeUsers || 0, // Using active users as proxy
+        contractsCreatedToday: contractsCreatedToday || 0,
+        paymentsProcessedToday: paymentsProcessedToday,
+        messagesExchangedToday: messagesExchangedToday || 0,
       },
     };
 

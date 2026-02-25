@@ -223,7 +223,7 @@ export default function ClientJobsPage() {
               >
                 {/* Job Header */}
                 <div className="flex justify-between items-start mb-4">
-                  <div className="flex-1">
+                <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-xl font-bold text-gray-900">
                         {job.title}
@@ -232,7 +232,7 @@ export default function ClientJobsPage() {
                         {getStatusLabel(job.status)}
                       </span>
                     </div>
-                    <p className="text-gray-600 line-clamp-2">
+                    <p className="text-gray-600 line-clamp-2 break-words overflow-hidden">
                       {job.description}
                     </p>
                   </div>

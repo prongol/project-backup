@@ -43,22 +43,35 @@ export async function GET(request: NextRequest) {
     for (const contract of contracts || []) {
       try {
         // Capture payment from escrow
-        const paymentIntent = await stripe.paymentIntents.capture(
-          contract.stripe_payment_intent_id
-        );
+        const paymentIntentId = contract.stripe_payment_intent_id;
+        
+        if (!paymentIntentId) {
+          console.error(`Contract ${contract.id} has no payment intent ID. Skipping.`);
+          failed.push({ id: contract.id, error: 'Missing stripe_payment_intent_id' });
+          continue;
+        }
+
+        // Capture the payment intent (escrow)
+        await stripe.paymentIntents.capture(paymentIntentId);
 
         // Transfer to freelancer
         if (contract.freelancer.stripe_account_id) {
-          await stripe.transfers.create({
-            amount: Math.round(contract.freelancer_amount * 100),
-            currency: 'usd',
-            destination: contract.freelancer.stripe_account_id,
-            transfer_group: `contract_${contract.id}`,
-            metadata: {
-              contract_id: contract.id,
-              auto_released: 'true',
-            },
-          });
+          const amountToTransfer = contract.freelancer_net_amount || contract.freelancer_amount || 0;
+          
+          if (amountToTransfer <= 0) {
+            console.error(`Contract ${contract.id} has zero freelancer amount. Skipping transfer.`);
+          } else {
+            await stripe.transfers.create({
+              amount: Math.round(amountToTransfer * 100),
+              currency: 'usd',
+              destination: contract.freelancer.stripe_account_id,
+              transfer_group: `contract_${contract.id}`,
+              metadata: {
+                contract_id: contract.id,
+                auto_released: 'true',
+              },
+            });
+          }
         }
 
         // Update contract
@@ -67,18 +80,20 @@ export async function GET(request: NextRequest) {
           .update({
             payment_status: 'released',
             status: 'completed',
-            released_at: new Date().toISOString(),
+            payment_released_at: new Date().toISOString(),
+            released_at: new Date().toISOString(), // Keeping both for compatibility
           })
           .eq('id', contract.id);
 
         // Notify freelancer
+        const displayAmount = contract.freelancer_net_amount || contract.freelancer_amount || 0;
         await supabase
           .from('notifications')
           .insert({
             user_id: contract.freelancer.profile_id,
             type: 'payment_released',
             title: '💰 Payment Released',
-            message: `$${contract.freelancer_amount.toFixed(2)} has been released to your account for "${contract.title}".`,
+            message: `$${displayAmount.toFixed(2)} has been released to your account for "${contract.title}".`,
             action_url: `/contracts/${contract.id}`,
           });
 

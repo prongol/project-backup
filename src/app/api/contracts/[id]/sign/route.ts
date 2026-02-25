@@ -22,11 +22,18 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { role } = body;
+    const { role, signature } = body;
 
     if (!role || !['client', 'freelancer'].includes(role)) {
       return NextResponse.json(
         { error: 'Invalid role. Must be either "client" or "freelancer"' },
+        { status: 400 }
+      );
+    }
+
+    if (!signature) {
+      return NextResponse.json(
+        { error: 'Signature is required' },
         { status: 400 }
       );
     }
@@ -102,14 +109,18 @@ export async function POST(
     const now = new Date().toISOString();
     const updateData: {
       client_signed_at?: string;
+      client_signature?: string;
       freelancer_signed_at?: string;
+      freelancer_signature?: string;
       status?: string;
     } = {};
 
     if (role === 'client') {
       updateData.client_signed_at = now;
+      updateData.client_signature = signature;
     } else {
       updateData.freelancer_signed_at = now;
+      updateData.freelancer_signature = signature;
     }
 
     // Check if both parties have signed (or will have after this signature)

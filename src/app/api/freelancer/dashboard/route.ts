@@ -5,8 +5,9 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient();
     
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
+    // Use getUser() instead of getSession() for security
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -14,27 +15,26 @@ export async function GET(request: NextRequest) {
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
-      .eq('id', session.user.id)
+      .eq('id', user.id)
       .single();
 
     if (profile?.role !== 'freelancer') {
       return NextResponse.json({ error: 'Forbidden - Freelancer access required' }, { status: 403 });
     }
 
-    // First, get the freelancer's ID from the freelancers table
-    const { data: freelancerData } = await supabase
+    // Get or create freelancer record
+    let { data: freelancerData } = await supabase
       .from('freelancers')
       .select('id')
-      .eq('profile_id', session.user.id)
-      .single();
+      .eq('profile_id', user.id)
+      .maybeSingle();
 
     if (!freelancerData) {
-      // If no freelancer record exists, create one
       const { data: newFreelancer } = await supabase
         .from('freelancers')
         .insert({ 
-          profile_id: session.user.id,
-          username: session.user.email?.split('@')[0] || 'freelancer'
+          profile_id: user.id,
+          username: user.email?.split('@')[0] || 'freelancer'
         })
         .select('id')
         .single();
@@ -42,10 +42,46 @@ export async function GET(request: NextRequest) {
       if (!newFreelancer) {
         throw new Error('Failed to create freelancer record');
       }
-      freelancerData!.id = newFreelancer.id;
+      freelancerData = newFreelancer;
     }
 
-    // Get stats in parallel
+    const freelancerId = freelancerData.id;
+
+    // Optimize: Batch all queries together
+    const [
+      statsResult,
+      { data: recentContracts },
+      { data: recentActivity }
+    ] = await Promise.all([
+      // All stats in one parallel batch
+      Promise.all([
+        supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('freelancer_id', freelancerId).eq('status', 'active'),
+        supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('freelancer_id', freelancerId).eq('status', 'pending_completion'),
+        supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('freelancer_id', freelancerId).eq('status', 'work_submitted'),
+        supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('freelancer_id', freelancerId).eq('status', 'approved'),
+        supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('freelancer_id', freelancerId).eq('status', 'completed'),
+        supabase.from('contracts').select('*', { count: 'exact', head: true }).eq('freelancer_id', freelancerId).eq('status', 'paid'),
+        supabase.from('proposals').select('*', { count: 'exact', head: true }).eq('freelancer_id', freelancerId).eq('status', 'pending'),
+        supabase.from('contracts').select('total_amount').eq('freelancer_id', freelancerId).in('status', ['approved', 'completed', 'paid'])
+      ]),
+      
+      // Recent contracts - minimal data only
+      supabase
+        .from('contracts')
+        .select('id, title, status, total_amount, created_at, client:client_id(profile_id, profiles(full_name, avatar_url)), job:job_id(title, category)')
+        .eq('freelancer_id', freelancerId)
+        .order('created_at', { ascending: false })
+        .limit(5),
+      
+      // Recent activity - simplified
+      supabase
+        .from('activities')
+        .select('id, type, description, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10)
+    ]);
+
     const [
       { count: activeCount },
       { count: pendingCompletionCount },
@@ -55,72 +91,11 @@ export async function GET(request: NextRequest) {
       { count: paidCount },
       { count: pendingProposals },
       { data: earnings }
-    ] = await Promise.all([
-      supabase
-        .from('contracts')
-        .select('*', { count: 'exact', head: true })
-        .eq('freelancer_id', freelancerData?.id || '')
-        .eq('status', 'active'),
-      supabase
-        .from('contracts')
-        .select('*', { count: 'exact', head: true })
-        .eq('freelancer_id', freelancerData?.id || '')
-        .eq('status', 'pending_completion'),
-      supabase
-        .from('contracts')
-        .select('*', { count: 'exact', head: true })
-        .eq('freelancer_id', freelancerData?.id || '')
-        .eq('status', 'work_submitted'),
-      supabase
-        .from('contracts')
-        .select('*', { count: 'exact', head: true })
-        .eq('freelancer_id', freelancerData?.id || '')
-        .eq('status', 'approved'),
-      supabase
-        .from('contracts')
-        .select('*', { count: 'exact', head: true })
-        .eq('freelancer_id', freelancerData?.id || '')
-        .eq('status', 'completed'),
-      supabase
-        .from('contracts')
-        .select('*', { count: 'exact', head: true })
-        .eq('freelancer_id', freelancerData?.id || '')
-        .eq('status', 'paid'),
-      supabase
-        .from('proposals')
-        .select('*', { count: 'exact', head: true })
-        .eq('freelancer_id', freelancerData?.id || '')
-        .eq('status', 'pending'),
-      supabase
-        .from('contracts')
-        .select('total_amount')
-        .eq('freelancer_id', freelancerData?.id || '')
-        .in('status', ['approved', 'completed', 'paid'])
-    ]);
+    ] = statsResult;
 
     const activeProjects = (activeCount || 0) + (pendingCompletionCount || 0) + (workSubmittedCount || 0);
     const completedProjectsCount = (approvedCount || 0) + (completedCount || 0) + (paidCount || 0);
     const totalEarnings = earnings?.reduce((sum, contract) => sum + (contract.total_amount || 0), 0) || 0;
-
-    // Get recent contracts
-    const { data: recentContracts } = await supabase
-      .from('contracts')
-      .select(`
-        *,
-        client:client_id(profile_id, profiles!inner(full_name, avatar_url)),
-        job:job_id(title, category)
-      `)
-      .eq('freelancer_id', freelancerData?.id || '')
-      .order('created_at', { ascending: false })
-      .limit(5);
-
-    // Get recent activity
-    const { data: recentActivity } = await supabase
-      .from('activities')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false })
-      .limit(10);
 
     return NextResponse.json({
       stats: {

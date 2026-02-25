@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { notifyProposalAccepted, notifyProposalRejected } from '@/lib/notifications';
+import { EmailNotifications } from '@/lib/notificationEmails';
 
 // PATCH /api/proposals/[id] - Update proposal status (approve/reject)
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient();
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const { status, rejection_reason } = body;
 
@@ -18,34 +19,6 @@ export async function PATCH(
       return NextResponse.json(
         { error: 'Invalid status. Must be: accepted, rejected, or pending' },
         { status: 400 }
-      );
-    }
-
-    // Get the proposal with related data
-    const { data: proposal, error: fetchError } = await supabase
-      .from('proposals')
-      .select(`
-        *,
-        jobs:job_id (
-          id,
-          title,
-          client_id
-        ),
-        freelancers:freelancer_id (
-          id,
-          profile_id,
-          profiles:profile_id (
-            full_name
-          )
-        )
-      `)
-      .eq('id', id)
-      .single();
-
-    if (fetchError || !proposal) {
-      return NextResponse.json(
-        { error: 'Proposal not found' },
-        { status: 404 }
       );
     }
 
@@ -59,8 +32,46 @@ export async function PATCH(
       );
     }
 
-    // Verify the user is the job owner
-    if (proposal.jobs.client_id !== user.id) {
+    // Get the proposal with related data (include clients join to get profile_id)
+    const { data: proposal, error: fetchError } = await supabase
+      .from('proposals')
+      .select(`
+        *,
+        jobs:job_id (
+          id,
+          title,
+          client_id,
+          clients:client_id (
+            profile_id
+          )
+        ),
+        freelancers:freelancer_id (
+          id,
+          profile_id,
+          profiles:profile_id (
+            full_name,
+            email
+          )
+        )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !proposal) {
+      return NextResponse.json(
+        { error: 'Proposal not found' },
+        { status: 404 }
+      );
+    }
+
+    // Resolve the client profile_id from the nested clients join
+    const jobClients = proposal.jobs.clients;
+    const clientProfileId = Array.isArray(jobClients)
+      ? jobClients[0]?.profile_id
+      : jobClients?.profile_id;
+
+    // Verify the user is the job owner (compare auth user id with client's profile_id)
+    if (clientProfileId !== user.id) {
       return NextResponse.json(
         { error: 'Only the job owner can update proposal status' },
         { status: 403 }
@@ -111,6 +122,36 @@ export async function PATCH(
           freelancerProfileId: freelancerProfileId,
           jobTitle: proposal.jobs.title
         });
+
+        // Send decline email to the freelancer
+        const freelancerProfiles = proposal.freelancers.profiles;
+        const freelancerProfile = Array.isArray(freelancerProfiles)
+          ? freelancerProfiles[0]
+          : freelancerProfiles;
+
+        if (freelancerProfile?.email) {
+          try {
+            // Get client name from their profile
+            const { data: clientProfile } = await supabase
+              .from('profiles')
+              .select('full_name')
+              .eq('id', user.id)
+              .single();
+
+            await EmailNotifications.send(
+              EmailNotifications.proposalDeclined(
+                freelancerProfile.full_name || 'Freelancer',
+                freelancerProfile.email,
+                clientProfile?.full_name || 'Client',
+                proposal.jobs.title,
+                rejection_reason
+              )
+            );
+            console.log('📧 Proposal decline email sent to:', freelancerProfile.email);
+          } catch (emailError) {
+            console.error('⚠️ Failed to send decline email:', emailError);
+          }
+        }
       }
     } catch (notificationError) {
       console.error('Error sending notification:', notificationError);
@@ -164,11 +205,11 @@ export async function PATCH(
 // GET /api/proposals/[id] - Get single proposal
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient();
-    const { id } = params;
+    const { id } = await params;
 
     const { data: proposal, error } = await supabase
       .from('proposals')

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { EmailNotifications } from '@/lib/notificationEmails';
 import { notifyMilestoneApproved, notifyMilestoneRejected } from '@/lib/notifications';
+import { stripe } from '@/lib/stripe';
 
 // POST /api/contracts/[id]/milestones/[milestoneId]/approve - Approve milestone and release payment
 export async function POST(
@@ -31,7 +32,8 @@ export async function POST(
         freelancer:freelancer_id (
           id,
           profile_id,
-          total_earned
+          total_earned,
+          stripe_account_id
         ),
         client:client_id (
           id,
@@ -158,12 +160,24 @@ export async function POST(
 
     const allMilestonesPaid = allMilestones?.every(m => m.status === 'paid');
 
-    // If all milestones are paid, mark contract as completed
+    // If all milestones are paid, mark contract as completed and release Stripe payment
     if (allMilestonesPaid) {
+      if (contract.stripe_payment_intent_id) {
+        try {
+          // Capture the held payment intent in Stripe
+          await stripe.paymentIntents.capture(contract.stripe_payment_intent_id);
+          console.log(`✅ Captured payment for contract ${id}`);
+        } catch (stripeError) {
+          console.error(`❌ Failed to capture Stripe payment:`, stripeError);
+          // We still mark as completed in DB, but log error for admin intervention
+        }
+      }
+
       await supabase
         .from('contracts')
         .update({
           status: 'completed',
+          payment_status: 'released',
           payment_released_at: now,
           updated_at: now
         })

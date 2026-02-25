@@ -3,9 +3,9 @@
  * Complete email system for client and freelancer notifications
  */
 
-import { resend } from './emailaa';
+import { sendEmailAction } from './emaila/emailActions';
 
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'noreply@neplancer.com';
+const FROM_EMAIL = process.env.SMTP_FROM || 'Neplancer <noreply@neplancer.com>';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 interface EmailTemplate {
@@ -216,6 +216,85 @@ export function getProposalReceivedEmail(
             <div class="footer">
               <p>© 2026 Neplancer. All rights reserved.</p>
               <p><a href="${APP_URL}/client/proposals">View All Proposals</a></p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `,
+  };
+}
+
+/**
+ * 2b. FREELANCER: Proposal Declined
+ * Sent to freelancer when client rejects their proposal
+ */
+export function getProposalDeclinedEmail(
+  freelancerName: string,
+  freelancerEmail: string,
+  clientName: string,
+  jobTitle: string,
+  rejectionReason?: string
+): EmailTemplate {
+  return {
+    to: freelancerEmail,
+    subject: `Your proposal for "${jobTitle}" was not selected`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background: #f4f7f9; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); color: white; padding: 40px 30px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; }
+            .content { padding: 40px 30px; }
+            .info-card { background: #f9fafb; border-left: 4px solid #d1d5db; padding: 20px; margin: 20px 0; border-radius: 8px; }
+            .reason-card { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 20px; margin: 20px 0; border-radius: 8px; }
+            .button { display: inline-block; padding: 14px 32px; background: #0CF574; color: #111; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 10px 5px; }
+            .footer { background: #f8fafb; padding: 30px; text-align: center; color: #6b7280; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>📋 Proposal Update</h1>
+              <p style="margin: 10px 0 0 0; opacity: 0.9;">Your proposal was reviewed</p>
+            </div>
+            <div class="content">
+              <p style="font-size: 16px;">Hi <strong>${freelancerName}</strong>,</p>
+              <p>Thank you for submitting your proposal. After careful consideration, <strong>${clientName}</strong> has decided not to move forward with your proposal at this time.</p>
+
+              <div class="info-card">
+                <p style="margin: 0;"><strong>Job:</strong> ${jobTitle}</p>
+                <p style="margin: 8px 0 0 0;"><strong>Client:</strong> ${clientName}</p>
+              </div>
+
+              ${rejectionReason ? `
+              <div class="reason-card">
+                <p style="margin: 0 0 6px 0;"><strong>💬 Feedback from client:</strong></p>
+                <p style="margin: 0; color: #92400e;">${rejectionReason}</p>
+              </div>` : ''}
+
+              <p>Don't be discouraged — there are many more opportunities on Neplancer. Keep applying and refining your proposals!</p>
+
+              <center>
+                <a href="${APP_URL}/freelancer/browse-jobs" class="button">Browse More Jobs →</a>
+              </center>
+
+              <p style="margin-top: 30px;"><strong>Tips for your next proposal:</strong></p>
+              <ul style="line-height: 2;">
+                <li>Personalize your cover letter to the specific job</li>
+                <li>Highlight relevant skills and past experience</li>
+                <li>Be clear about your timeline and pricing</li>
+                <li>Keep it concise and professional</li>
+              </ul>
+
+              <p>Best of luck,<br><strong>The Neplancer Team</strong></p>
+            </div>
+            <div class="footer">
+              <p>© 2026 Neplancer. All rights reserved.</p>
+              <p><a href="${APP_URL}/freelancer/my-proposals">View My Proposals</a></p>
             </div>
           </div>
         </body>
@@ -1058,25 +1137,19 @@ export async function sendNotificationEmail(template: EmailTemplate): Promise<{s
     if (process.env.DISABLE_EMAILS === 'true') {
       console.log('📧 [DEV MODE - EMAILS DISABLED] Email would be sent to:', template.to);
       console.log('📋 Subject:', template.subject);
-      console.log('---');
       return { success: true };
     }
 
-    // Check if Resend API key is configured
-    if (!process.env.RESEND_API_KEY) {
-      console.log('📧 [DEV MODE - NO API KEY] Email would be sent to:', template.to);
-      console.log('📋 Subject:', template.subject);
-      return { success: true };
-    }
-
-    const { data, error } = await resend.emails.send({
+    const result = await sendEmailAction({
       from: FROM_EMAIL,
-      ...template,
+      to: template.to,
+      subject: template.subject,
+      html: template.html,
     });
 
-    if (error) {
-      console.error('❌ Email send error:', error);
-      return { success: false, error };
+    if (!result.success) {
+      console.error('❌ Email send error:', result.error);
+      return { success: false, error: result.error };
     }
 
     console.log('✅ Email sent successfully to:', template.to);
@@ -1100,6 +1173,7 @@ export const EmailNotifications = {
   contractArrived: getContractArrivedEmail,
   paymentReceived: getPaymentReceivedEmail,
   projectCancelled: getProjectCancelledEmail,
+  proposalDeclined: getProposalDeclinedEmail,
   
   // Both parties
   disputeCreated: getDisputeCreatedEmail,

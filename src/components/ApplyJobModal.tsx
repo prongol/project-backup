@@ -162,7 +162,7 @@ export default function ApplyJobModal({
                   <FileText className="h-5 w-5 text-[#0CF574]" />
                   Project Description
                 </h3>
-                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{job.description}</p>
+                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap break-words overflow-hidden">{job.description}</p>
               </div>
 
               {/* Required Skills */}
