@@ -105,6 +105,24 @@ export async function POST(
         if (reviewError) {
           console.error('Error saving review:', reviewError);
           // Don't fail the whole request for a review error, but log it
+        } else {
+          // Sync freelancers.rating and freelancers.total_reviews
+          // The DB trigger already updated profiles.avg_rating — mirror it here
+          const { data: updatedProfile } = await supabase
+            .from('profiles')
+            .select('avg_rating, total_reviews')
+            .eq('id', contract.freelancer.profile_id)
+            .single();
+
+          if (updatedProfile) {
+            await supabase
+              .from('freelancers')
+              .update({
+                rating: updatedProfile.avg_rating,
+                total_reviews: updatedProfile.total_reviews,
+              })
+              .eq('id', contract.freelancer.id);
+          }
         }
       } catch (reviewEx) {
         console.error('Exception saving review:', reviewEx);

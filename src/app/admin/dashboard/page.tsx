@@ -72,10 +72,18 @@ interface User {
 
 interface Payment {
   id: string;
-  amount: number;
-  status: string;
-  created_at: string;
+  contract_id: string;
   contract_title: string;
+  amount: number;
+  platform_fee: number;
+  freelancer_amount: number;
+  status: string;
+  contract_status: string;
+  stripe_payment_intent_id: string | null;
+  auto_release_at: string | null;
+  released_at: string | null;
+  paid_at: string | null;
+  created_at: string;
   client_name: string;
   freelancer_name: string;
 }
@@ -89,6 +97,28 @@ interface Contract {
   freelancer_name: string;
   created_at: string;
   health_status: string;
+  payment_status: string;
+  stripe_payment_intent_id: string | null;
+  auto_release_at: string | null;
+}
+
+interface Dispute {
+  id: string;
+  dispute_type: string;
+  reason: string;
+  amount_disputed: number | null;
+  status: string;
+  created_at: string;
+  resolved_at: string | null;
+  resolution_type: string | null;
+  resolution_details: string | null;
+  contract_id: string;
+  contract_title: string;
+  contract_amount: number;
+  opened_by_name: string;
+  opened_by_email: string;
+  opened_by_role: string;
+  admin_name: string | null;
 }
 
 export default function AdminDashboard() {
@@ -96,13 +126,14 @@ export default function AdminDashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<AdminStats | null>(null);
-  const [selectedSection, setSelectedSection] = useState<'overview' | 'users' | 'contracts' | 'payments' | 'activity'>('overview');
+  const [selectedSection, setSelectedSection] = useState<'overview' | 'users' | 'contracts' | 'payments' | 'disputes' | 'activity'>('overview');
   
   // Data states
   const [users, setUsers] = useState<User[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [disputes, setDisputes] = useState<Dispute[]>([]);
   
   // Search and filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -221,11 +252,24 @@ export default function AdminDashboard() {
     }
   };
 
+  const fetchDisputes = async () => {
+    try {
+      const response = await fetch('/api/admin/disputes');
+      if (response.ok) {
+        const data = await response.json();
+        setDisputes(data.disputes || []);
+      }
+    } catch (error) {
+      console.error('Error fetching disputes:', error);
+    }
+  };
+
   useEffect(() => {
     if (selectedSection === 'users') fetchUsers();
     else if (selectedSection === 'payments') fetchPayments();
     else if (selectedSection === 'contracts') fetchContracts();
     else if (selectedSection === 'activity') fetchActivities();
+    else if (selectedSection === 'disputes') fetchDisputes();
   }, [selectedSection]);
 
   // User Management Actions
@@ -323,6 +367,63 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleHoldFunds = async (contractId: string) => {
+    const reason = prompt('Reason for holding funds (optional):') ?? 'Admin hold — under review';
+    try {
+      const response = await fetch(`/api/admin/payments/${contractId}/hold`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      });
+      if (response.ok) {
+        toast.success('Funds withheld — auto-release paused');
+        fetchPayments();
+      } else {
+        const d = await response.json();
+        toast.error(d.error || 'Failed to hold funds');
+      }
+    } catch {
+      toast.error('Error withholding funds');
+    }
+  };
+
+  const handleReleaseFunds = async (contractId: string, freelancerName: string) => {
+    if (!confirm(`Release funds immediately to ${freelancerName}? This cannot be undone.`)) return;
+    try {
+      const response = await fetch(`/api/admin/payments/${contractId}/release`, {
+        method: 'POST',
+      });
+      if (response.ok) {
+        toast.success('Funds released successfully');
+        fetchPayments();
+      } else {
+        const d = await response.json();
+        toast.error(d.error || 'Failed to release funds');
+      }
+    } catch {
+      toast.error('Error releasing funds');
+    }
+  };
+
+  const handleResolveDispute = async (disputeId: string, status: string) => {
+    const resolution = status === 'resolved' ? prompt('Resolution details:') : null;
+    try {
+      const response = await fetch('/api/admin/disputes', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dispute_id: disputeId, status, resolution_details: resolution }),
+      });
+      if (response.ok) {
+        toast.success(`Dispute marked as ${status}`);
+        fetchDisputes();
+      } else {
+        toast.error('Failed to update dispute');
+      }
+    } catch {
+      toast.error('Error updating dispute');
+    }
+  };
+
   // Contract Actions
   const handleCancelContract = async (contractId: string) => {
     if (!confirm('Cancel this contract? This will refund any escrowed funds.')) return;
@@ -396,11 +497,12 @@ export default function AdminDashboard() {
               { id: 'users', label: 'User Management', icon: Users },
               { id: 'contracts', label: 'Contracts', icon: FileText },
               { id: 'payments', label: 'Payments', icon: DollarSign },
+              { id: 'disputes', label: 'Disputes', icon: XCircle },
               { id: 'activity', label: 'Activity Logs', icon: Activity }
             ].map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
-                onClick={() => setSelectedSection(id as 'overview' | 'users' | 'contracts' | 'payments' | 'activity')}
+                onClick={() => setSelectedSection(id as 'overview' | 'users' | 'contracts' | 'payments' | 'disputes' | 'activity')}
                 className={`flex items-center gap-2 px-4 py-3 border-b-2 whitespace-nowrap ${
                   selectedSection === id
                     ? 'border-blue-600 text-blue-600'
@@ -572,7 +674,8 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {users.filter(u => 
+                    {users.filter(u =>
+                      !u.is_admin &&
                       (filterStatus === 'all' || u.account_status === filterStatus) &&
                       (searchTerm === '' || u.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || u.email.toLowerCase().includes(searchTerm.toLowerCase()))
                     ).map((user) => (
@@ -652,6 +755,12 @@ export default function AdminDashboard() {
                 </button>
               </div>
 
+              {contracts.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <FileText className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                  <p>No contracts found</p>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50">
@@ -661,6 +770,7 @@ export default function AdminDashboard() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Freelancer</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Health</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
@@ -674,14 +784,25 @@ export default function AdminDashboard() {
                         </td>
                         <td className="px-4 py-3 text-sm">{contract.client_name}</td>
                         <td className="px-4 py-3 text-sm">{contract.freelancer_name}</td>
-                        <td className="px-4 py-3 font-medium">${contract.total_amount.toLocaleString()}</td>
+                        <td className="px-4 py-3 font-medium">${(contract.total_amount || 0).toLocaleString()}</td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-1 rounded-full text-xs ${
                             contract.status === 'active' ? 'bg-green-100 text-green-800' :
                             contract.status === 'completed' ? 'bg-blue-100 text-blue-800' :
+                            contract.status === 'disputed' ? 'bg-red-100 text-red-800' :
                             'bg-gray-100 text-gray-800'
                           }`}>
                             {contract.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            contract.payment_status === 'released' ? 'bg-green-100 text-green-800' :
+                            contract.payment_status === 'held' ? 'bg-orange-100 text-orange-800' :
+                            contract.payment_status === 'paid' ? 'bg-blue-100 text-blue-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {contract.payment_status || 'pending'}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -718,6 +839,7 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
           </div>
         )}
@@ -736,54 +858,94 @@ export default function AdminDashboard() {
                 </button>
               </div>
 
+              {payments.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <DollarSign className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                  <p>No payment records found</p>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contract</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">From → To</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client → Freelancer</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Platform Fee</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Auto Release</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {payments.map((payment) => (
                       <tr key={payment.id}>
-                        <td className="px-4 py-3 text-sm">{payment.contract_title}</td>
-                        <td className="px-4 py-3 text-sm">
-                          {payment.client_name} → {payment.freelancer_name}
-                        </td>
-                        <td className="px-4 py-3 font-medium">${payment.amount.toLocaleString()}</td>
                         <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded-full text-xs ${
-                            payment.status === 'completed' ? 'bg-green-100 text-green-800' :
-                            payment.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-gray-100 text-gray-800'
+                          <p className="font-medium text-sm">{payment.contract_title}</p>
+                          <p className="text-xs text-gray-400">{new Date(payment.created_at).toLocaleDateString()}</p>
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <span className="font-medium">{payment.client_name}</span>
+                          <span className="text-gray-400 mx-1">→</span>
+                          <span className="font-medium">{payment.freelancer_name}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="font-semibold">${(payment.amount || 0).toLocaleString()}</p>
+                          {payment.freelancer_amount > 0 && (
+                            <p className="text-xs text-gray-500">Net: ${payment.freelancer_amount.toLocaleString()}</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">
+                          {payment.platform_fee > 0 ? `$${payment.platform_fee.toLocaleString()}` : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            payment.status === 'released' ? 'bg-green-100 text-green-800' :
+                            payment.status === 'held' ? 'bg-orange-100 text-orange-800' :
+                            payment.status === 'paid' ? 'bg-blue-100 text-blue-800' :
+                            payment.status === 'disputed' ? 'bg-red-100 text-red-800' :
+                            payment.status === 'refunded' ? 'bg-purple-100 text-purple-800' :
+                            'bg-yellow-100 text-yellow-800'
                           }`}>
                             {payment.status}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
-                          {new Date(payment.created_at).toLocaleDateString()}
+                        <td className="px-4 py-3 text-xs text-gray-500">
+                          {payment.auto_release_at
+                            ? new Date(payment.auto_release_at).toLocaleDateString()
+                            : payment.released_at
+                            ? `Released ${new Date(payment.released_at).toLocaleDateString()}`
+                            : '—'}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex gap-2">
-                            {payment.status === 'pending' && (
+                          <div className="flex gap-1 flex-wrap">
+                            {/* Withold button — available on paid/pending status */}
+                            {['paid', 'pending', 'approved'].includes(payment.status) && (
                               <button
-                                onClick={() => handleApprovePayment(payment.id)}
-                                className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                                onClick={() => handleHoldFunds(payment.contract_id)}
+                                className="px-2 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 whitespace-nowrap"
+                                title="Pause auto-release and hold funds"
                               >
-                                Approve
+                                ⏸ Withhold
                               </button>
                             )}
-                            {payment.status === 'completed' && (
+                            {/* Instant Release — available on paid/held/approved */}
+                            {['paid', 'held', 'approved', 'pending'].includes(payment.status) && (
+                              <button
+                                onClick={() => handleReleaseFunds(payment.contract_id, payment.freelancer_name)}
+                                className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 whitespace-nowrap"
+                                title="Immediately release funds to freelancer via Stripe"
+                              >
+                                ⚡ Release
+                              </button>
+                            )}
+                            {/* Refund — available on released */}
+                            {payment.status === 'released' && (
                               <button
                                 onClick={() => handleRefundPayment(payment.id)}
-                                className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
+                                className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700"
                               >
-                                Refund
+                                ↩ Refund
                               </button>
                             )}
                           </div>
@@ -793,6 +955,126 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {selectedSection === 'disputes' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold">Dispute Management</h2>
+                <div className="flex gap-2 text-sm">
+                  <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full">
+                    Open: {disputes.filter(d => d.status === 'open').length}
+                  </span>
+                  <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full">
+                    Under Review: {disputes.filter(d => d.status === 'under_review').length}
+                  </span>
+                  <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full">
+                    Resolved: {disputes.filter(d => d.status === 'resolved').length}
+                  </span>
+                </div>
+              </div>
+
+              {disputes.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <Shield className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                  <p>No disputes found</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {disputes.map((dispute) => (
+                    <div key={dispute.id} className={`border rounded-lg p-4 ${
+                      dispute.status === 'open' ? 'border-yellow-200 bg-yellow-50' :
+                      dispute.status === 'under_review' ? 'border-blue-200 bg-blue-50' :
+                      dispute.status === 'resolved' ? 'border-green-200 bg-green-50' :
+                      'border-gray-200 bg-gray-50'
+                    }`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              dispute.status === 'open' ? 'bg-yellow-200 text-yellow-900' :
+                              dispute.status === 'under_review' ? 'bg-blue-200 text-blue-900' :
+                              'bg-green-200 text-green-900'
+                            }`}>
+                              {dispute.status.replace('_', ' ').toUpperCase()}
+                            </span>
+                            <span className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded-full text-xs">
+                              {dispute.dispute_type.replace(/_/g, ' ')}
+                            </span>
+                            {dispute.amount_disputed && (
+                              <span className="text-xs text-red-600 font-semibold">
+                                ${dispute.amount_disputed.toLocaleString()} disputed
+                              </span>
+                            )}
+                          </div>
+                          <p className="font-semibold text-gray-900 mb-1">{dispute.contract_title}</p>
+                          <p className="text-sm text-gray-600 mb-2 line-clamp-2">{dispute.reason}</p>
+                          <div className="flex gap-4 text-xs text-gray-500">
+                            <span>Filed by: <strong>{dispute.opened_by_name}</strong> ({dispute.opened_by_role})</span>
+                            <span>{new Date(dispute.created_at).toLocaleDateString()}</span>
+                            {dispute.admin_name && <span>Assigned: {dispute.admin_name}</span>}
+                          </div>
+                          {dispute.resolution_details && (
+                            <p className="mt-2 text-sm text-green-700 bg-green-100 rounded p-2">
+                              Resolution: {dispute.resolution_details}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-2 shrink-0">
+                          {dispute.status !== 'resolved' && dispute.status !== 'closed' && (
+                            <>
+                              <button
+                                onClick={() => router.push(`/disputes/${dispute.id}`)}
+                                className="px-3 py-1 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 whitespace-nowrap"
+                              >
+                                Open Thread →
+                              </button>
+                              <button
+                                onClick={() => handleResolveDispute(dispute.id, 'under_review')}
+                                className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 whitespace-nowrap"
+                              >
+                                Mark Under Review
+                              </button>
+                              <button
+                                onClick={() => handleResolveDispute(dispute.id, 'resolved')}
+                                className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 whitespace-nowrap"
+                              >
+                                Mark Resolved
+                              </button>
+                              <button
+                                onClick={() => router.push(`/contracts/${dispute.contract_id}`)}
+                                className="px-3 py-1 bg-gray-100 text-gray-700 text-xs rounded hover:bg-gray-200 whitespace-nowrap"
+                              >
+                                View Contract
+                              </button>
+                            </>
+                          )}
+                          {dispute.status === 'resolved' && (
+                            <>
+                              <button
+                                onClick={() => router.push(`/disputes/${dispute.id}`)}
+                                className="px-3 py-1 bg-orange-100 text-orange-700 text-xs rounded hover:bg-orange-200"
+                              >
+                                View Thread
+                              </button>
+                              <button
+                                onClick={() => router.push(`/contracts/${dispute.contract_id}`)}
+                                className="px-3 py-1 bg-gray-100 text-gray-700 text-xs rounded hover:bg-gray-200"
+                              >
+                                View Contract
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}

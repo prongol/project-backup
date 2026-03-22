@@ -69,9 +69,9 @@ export async function POST(
     await supabase.from('admin_actions').insert({
       admin_id: user.id,
       action_type: 'suspended_account',
-      target_user_id: id,
-      reason,
-      details: {
+      action_details: {
+        target_user_id: id,
+        reason,
         duration_days: validDuration,
         suspended_until: suspendedUntil.toISOString()
       }

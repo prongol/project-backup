@@ -30,6 +30,11 @@ export async function POST(req: NextRequest) {
         await handlePaymentFailed(event.data.object as Stripe.PaymentIntent);
         break;
 
+      // Fires when a manual-capture PI is authorized by the customer (funds are held)
+      case 'payment_intent.amount_capturable_updated':
+        await handlePaymentAuthorized(event.data.object as Stripe.PaymentIntent);
+        break;
+
       case 'account.updated':
         await handleAccountUpdated(event.data.object as Stripe.Account);
         break;
@@ -40,6 +45,19 @@ export async function POST(req: NextRequest) {
 
       case 'charge.refunded':
         await handleChargeRefunded(event.data.object as Stripe.Charge);
+        break;
+
+      // Stripe built-in dispute / chargeback events
+      case 'charge.dispute.created':
+        await handleStripeDisputeCreated(event.data.object as Stripe.Dispute);
+        break;
+
+      case 'charge.dispute.updated':
+        await handleStripeDisputeUpdated(event.data.object as Stripe.Dispute);
+        break;
+
+      case 'charge.dispute.closed':
+        await handleStripeDisputeClosed(event.data.object as Stripe.Dispute);
         break;
 
       default:
@@ -208,7 +226,7 @@ async function handleTransferCreated(transfer: Stripe.Transfer) {
   }
 }
 
-// Handle refund
+// Handle charge refund
 async function handleChargeRefunded(charge: Stripe.Charge) {
   const paymentIntentId = charge.payment_intent as string;
 
@@ -240,4 +258,185 @@ async function handleChargeRefunded(charge: Stripe.Charge) {
       p_link: `/transactions`,
     });
   }
+}
+
+// ─── New handlers ─────────────────────────────────────────────────────────────
+
+// Fires when a manual-capture PaymentIntent is authorized (funds held by card)
+async function handlePaymentAuthorized(paymentIntent: Stripe.PaymentIntent) {
+  const contractId = paymentIntent.metadata?.contractId;
+  if (!contractId) return;
+
+  // Mark the contract payment as 'held' so admin can see it's funded
+  const { error } = await supabase
+    .from('contracts')
+    .update({
+      payment_status: 'held',
+      stripe_payment_intent_id: paymentIntent.id,
+    })
+    .eq('id', contractId)
+    .in('payment_status', ['pending', null]); // only update if not already further along
+
+  if (error) {
+    console.error('Error updating contract payment_status to held:', error);
+    return;
+  }
+
+  // Notify the freelancer that funds are secured
+  const { data: contract } = await supabase
+    .from('contracts')
+    .select(`
+      id, title,
+      freelancer:freelancers!contracts_freelancer_id_fkey (
+        profile:profiles!freelancers_profile_id_fkey ( id )
+      )
+    `)
+    .eq('id', contractId)
+    .single();
+
+  const freelancerProfileId = (contract as any)?.freelancer?.profile?.id;
+  if (freelancerProfileId) {
+    await supabase.rpc('create_notification', {
+      p_user_id: freelancerProfileId,
+      p_type: 'payment_secured',
+      p_title: 'Payment Secured 💰',
+      p_message: `Client funds are now held in escrow for "${(contract as any)?.title}".`,
+      p_link: `/contracts/${contractId}`,
+    });
+  }
+}
+
+// Stripe chargeback / dispute filed by cardholder
+async function handleStripeDisputeCreated(dispute: Stripe.Dispute) {
+  const chargeId = dispute.charge as string;
+
+  // Look up the contract via charge → payment intent
+  const charge = await stripe.charges.retrieve(chargeId);
+  const piId = charge.payment_intent as string | null;
+  if (!piId) return;
+
+  // Find contract linked to this PI
+  const { data: contract } = await supabase
+    .from('contracts')
+    .select('id, title, client_id, freelancer_id')
+    .eq('stripe_payment_intent_id', piId)
+    .maybeSingle();
+
+  if (!contract) {
+    console.warn('Stripe dispute created but no contract found for PI:', piId);
+    return;
+  }
+
+  // Log a platform dispute record so admin can see it
+  await supabase.from('contract_disputes').insert({
+    contract_id: contract.id,
+    opened_by: contract.client_id, // client filed the chargeback with their bank
+    dispute_type: 'chargeback',
+    reason: `Stripe chargeback filed. Reason: ${dispute.reason}. Amount: $${(dispute.amount / 100).toFixed(2)}. Dispute ID: ${dispute.id}`,
+    amount_disputed: dispute.amount / 100,
+    status: 'open',
+  }).then(({ error }) => {
+    if (error) console.error('Failed to log stripe dispute:', error);
+  });
+
+  // Notify all admins
+  const { data: admins } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('is_admin', true)
+    .limit(5);
+
+  await Promise.allSettled(
+    (admins ?? []).map((a: { id: string }) =>
+      supabase.rpc('create_notification', {
+        p_user_id: a.id,
+        p_type: 'stripe_dispute',
+        p_title: '⚠️ Stripe Chargeback Filed',
+        p_message: `Chargeback on contract "${contract.title}". Amount: $${(dispute.amount / 100).toFixed(2)}. Reason: ${dispute.reason}.`,
+        p_link: `/admin/dashboard`,
+      })
+    )
+  );
+
+  console.log(`Stripe dispute ${dispute.id} logged for contract ${contract.id}`);
+}
+
+// Stripe dispute status updated (e.g., evidence submitted, under_review)
+async function handleStripeDisputeUpdated(dispute: Stripe.Dispute) {
+  const charge = await stripe.charges.retrieve(dispute.charge as string);
+  const piId = charge.payment_intent as string | null;
+  if (!piId) return;
+
+  const { data: contract } = await supabase
+    .from('contracts')
+    .select('id')
+    .eq('stripe_payment_intent_id', piId)
+    .maybeSingle();
+
+  if (!contract) return;
+
+  // Update any matching open dispute record
+  await supabase
+    .from('contract_disputes')
+    .update({
+      reason: `Stripe chargeback. Status: ${dispute.status}. Reason: ${dispute.reason}. Dispute ID: ${dispute.id}`,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('contract_id', contract.id)
+    .eq('dispute_type', 'chargeback')
+    .neq('status', 'resolved');
+
+  console.log(`Stripe dispute ${dispute.id} updated — status: ${dispute.status}`);
+}
+
+// Stripe dispute closed (won, lost, or warning_closed)
+async function handleStripeDisputeClosed(dispute: Stripe.Dispute) {
+  const charge = await stripe.charges.retrieve(dispute.charge as string);
+  const piId = charge.payment_intent as string | null;
+  if (!piId) return;
+
+  const { data: contract } = await supabase
+    .from('contracts')
+    .select('id, title')
+    .eq('stripe_payment_intent_id', piId)
+    .maybeSingle();
+
+  if (!contract) return;
+
+  const won = dispute.status === 'won';
+  const resolution = won
+    ? 'Platform won the Stripe chargeback dispute.'
+    : `Platform lost the Stripe chargeback. Amount of $${(dispute.amount / 100).toFixed(2)} returned to cardholder.`;
+
+  await supabase
+    .from('contract_disputes')
+    .update({
+      status: 'resolved',
+      resolution_type: won ? 'payment_released' : 'full_refund',
+      resolution_details: resolution,
+      resolved_at: new Date().toISOString(),
+    })
+    .eq('contract_id', contract.id)
+    .eq('dispute_type', 'chargeback');
+
+  // Notify admins
+  const { data: admins } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('is_admin', true)
+    .limit(5);
+
+  await Promise.allSettled(
+    (admins ?? []).map((a: { id: string }) =>
+      supabase.rpc('create_notification', {
+        p_user_id: a.id,
+        p_type: 'stripe_dispute',
+        p_title: won ? '✅ Chargeback Won' : '❌ Chargeback Lost',
+        p_message: `${resolution} Contract: "${(contract as any).title}".`,
+        p_link: `/admin/dashboard`,
+      })
+    )
+  );
+
+  console.log(`Stripe dispute ${dispute.id} closed — ${dispute.status}`);
 }

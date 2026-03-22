@@ -19,6 +19,8 @@ export async function GET(
           full_name,
           email,
           avatar_url,
+          avg_rating,
+          total_reviews,
           created_at
         )
       `)
@@ -30,7 +32,7 @@ export async function GET(
       return NextResponse.json({ error: 'Freelancer not found' }, { status: 404 });
     }
 
-    // Get freelancer's completed contracts for portfolio/reviews
+    // Get freelancer's completed contracts for portfolio
     const { data: contracts } = await supabase
       .from('contracts')
       .select(`
@@ -40,13 +42,6 @@ export async function GET(
           description,
           category,
           budget
-        ),
-        client:client_id (
-          profile_id,
-          profiles!inner (
-            full_name,
-            avatar_url
-          )
         )
       `)
       .eq('freelancer_id', freelancerId)
@@ -54,26 +49,52 @@ export async function GET(
       .order('created_at', { ascending: false })
       .limit(10);
 
-    // Transform contracts into portfolio items and reviews
+    // Get real reviews from the reviews table
+    const { data: rawReviews } = await supabase
+      .from('reviews')
+      .select(`
+        id,
+        rating,
+        comment,
+        created_at,
+        contract_id,
+        reviewer:reviewer_id (
+          full_name,
+          avatar_url
+        ),
+        contracts!contract_id (
+          title
+        )
+      `)
+      .eq('reviewee_id', freelancer.profiles.id)
+      .eq('is_public', true)
+      .order('created_at', { ascending: false });
+
+    // Transform contracts into portfolio items
     const portfolio = contracts?.map(contract => ({
       id: contract.id,
-      title: contract.job?.title || 'Completed Project',
-      description: contract.job?.description || 'Project completed successfully',
-      image: `https://picsum.photos/400/300?random=${contract.id}`, // Placeholder image
-      category: contract.job?.category || 'Other',
+      title: (contract.job as { title?: string } | null)?.title || 'Completed Project',
+      description: (contract.job as { description?: string } | null)?.description || 'Project completed successfully',
+      image: `https://picsum.photos/400/300?random=${contract.id}`,
+      category: (contract.job as { category?: string } | null)?.category || 'Other',
       technologies: [],
       url: null
     })) || [];
 
-    const reviews = contracts?.map(contract => ({
-      id: contract.id,
-      clientName: contract.client?.profiles?.full_name || 'Anonymous Client',
-      clientAvatar: contract.client?.profiles?.avatar_url || null,
-      rating: 5, // Default rating for now
-      comment: `Great work on ${contract.job?.title}. Professional and delivered on time.`,
-      date: new Date(contract.created_at).toLocaleDateString(),
-      projectTitle: contract.job?.title || 'Project'
-    })) || [];
+    // Shape real reviews
+    const reviews = (rawReviews ?? []).map(r => {
+      const reviewer = r.reviewer as { full_name?: string; avatar_url?: string } | null;
+      const contract = r.contracts as { title?: string } | null;
+      return {
+        id: r.id,
+        clientName: reviewer?.full_name || 'Anonymous Client',
+        clientAvatar: reviewer?.avatar_url || null,
+        rating: r.rating,
+        comment: r.comment || '',
+        date: new Date(r.created_at).toLocaleDateString(),
+        projectTitle: contract?.title || 'Project'
+      };
+    });
 
     const response = {
       freelancer: {
@@ -85,8 +106,8 @@ export async function GET(
         avatar: freelancer.profiles.avatar_url,
         location: 'Remote', // Add location field to freelancers table if needed
         hourlyRate: freelancer.hourly_rate,
-        rating: freelancer.rating,
-        totalReviews: freelancer.total_reviews,
+        rating: Number(freelancer.profiles.avg_rating) || 0,
+        totalReviews: freelancer.profiles.total_reviews || 0,
         completedJobs: freelancer.completed_jobs,
         skills: freelancer.skills || [],
         totalEarned: freelancer.total_earned,

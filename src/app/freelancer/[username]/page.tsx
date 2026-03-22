@@ -579,7 +579,8 @@ export default function FreelancerPublicProfile() {
                 </div>
               </Card>
 
-              {/* Ratings Breakdown */}
+              {/* Ratings Breakdown — only shown when the freelancer has at least one review */}
+              {profile.stats.total_reviews > 0 && (
               <Card className="p-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-4">Ratings Breakdown</h2>
                 <div className="space-y-4">
@@ -626,6 +627,7 @@ export default function FreelancerPublicProfile() {
                   </div>
                 </div>
               </Card>
+              )}
             </div>
           </div>
         )}

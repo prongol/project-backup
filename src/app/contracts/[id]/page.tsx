@@ -102,6 +102,7 @@ interface Contract {
   milestones?: Milestone[];
   escrow_status?: string;
   escrow_funded?: boolean;
+  active_dispute_id?: string | null;
 }
 
 export default function ContractDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -124,7 +125,7 @@ export default function ContractDetailPage({ params }: { params: Promise<{ id: s
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
   const [contract, setContract] = useState<Contract | null>(null);
-  const [userRole, setUserRole] = useState<'client' | 'freelancer' | null>(null);
+  const [userRole, setUserRole] = useState<'client' | 'freelancer' | 'admin' | null>(null);
   const [error, setError] = useState<string | null>(null);
   
   // New state for confirmation, edit, and history
@@ -160,9 +161,12 @@ export default function ContractDetailPage({ params }: { params: Promise<{ id: s
       
       // Determine user role
       if (user) {
-        // Check if user is client or freelancer by comparing profile IDs
-        const isClient = data.contract.client.profile_id === user.id;
-        setUserRole(isClient ? 'client' : 'freelancer');
+        if (data.is_admin) {
+          setUserRole('admin');
+        } else {
+          const isClient = data.contract.client.profile_id === user.id;
+          setUserRole(isClient ? 'client' : 'freelancer');
+        }
       }
     } catch (error) {
       console.error('Error fetching contract:', error);
@@ -243,6 +247,11 @@ export default function ContractDetailPage({ params }: { params: Promise<{ id: s
 
   const handleApproveWork = async () => {
     if (!contract) return;
+
+    if (rating === 0) {
+      toast.error('Please give a star rating before approving.');
+      return;
+    }
 
     try {
       setApproving(true);
@@ -343,7 +352,12 @@ export default function ContractDetailPage({ params }: { params: Promise<{ id: s
       setShowDisputeModal(false);
       setDisputeReason('');
       setDisputeType('quality_issue');
-      fetchContract();
+      // Navigate straight to the dispute thread
+      if (data.dispute?.id) {
+        router.push(`/disputes/${data.dispute.id}`);
+      } else {
+        fetchContract();
+      }
     } catch (error) {
       console.error('Error filing dispute:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to file dispute');
@@ -1165,14 +1179,16 @@ export default function ContractDetailPage({ params }: { params: Promise<{ id: s
                   </button>
                 )}
 
-                {/* Contact Admin Button */}
-                <button
-                  onClick={() => router.push('/support')}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 border-2 border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 font-medium"
-                >
-                  <MessageSquare className="h-5 w-5" />
-                  Contact Admin Support
-                </button>
+                {/* View Dispute Thread - shown when a dispute is active */}
+                {contract.active_dispute_id && (
+                  <button
+                    onClick={() => router.push(`/disputes/${contract.active_dispute_id}`)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-semibold"
+                  >
+                    <MessageSquare className="h-5 w-5" />
+                    View Dispute Thread
+                  </button>
+                )}
 
                 <button
                   onClick={() => window.print()}
@@ -1232,18 +1248,23 @@ export default function ContractDetailPage({ params }: { params: Promise<{ id: s
               </p>
               
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Rating (Optional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Rating <span className="text-red-500">*</span>
+                </label>
                 <div className="flex gap-2">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <button
                       key={star}
                       onClick={() => setRating(star)}
-                      className={`text-2xl ${star <= rating ? 'text-yellow-500' : 'text-gray-300'}`}
+                      className={`text-2xl transition-colors ${star <= rating ? 'text-yellow-500' : 'text-gray-300 hover:text-yellow-300'}`}
                     >
                       ★
                     </button>
                   ))}
                 </div>
+                {rating === 0 && (
+                  <p className="text-xs text-red-500 mt-1">Please select a rating to continue.</p>
+                )}
               </div>
 
               <textarea

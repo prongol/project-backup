@@ -183,65 +183,86 @@ export async function PATCH(
   }
 }
 
-// GET /api/disputes/[id] - Get single dispute
+// GET /api/disputes/[id] - Get dispute details for the thread page
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
     const supabase = await createClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    
+
     if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { id } = params;
 
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_admin, role')
+      .eq('id', user.id)
+      .single();
+
     const { data: dispute, error } = await supabase
       .from('contract_disputes')
       .select(`
-        *,
-        contract:contract_id(
-          *,
-          client:client_id(full_name, email, avatar_url),
-          freelancer:freelancer_id(full_name, email, avatar_url)
+        id, dispute_type, reason, amount_disputed, status,
+        created_at, resolved_at, resolution_type, resolution_details,
+        opened_by,
+        contract:contracts!contract_disputes_contract_id_fkey (
+          id, title, total_amount, status,
+          client:clients!contracts_client_id_fkey (
+            profile_id,
+            profile:profiles!clients_profile_id_fkey (
+              id, full_name, avatar_url
+            )
+          ),
+          freelancer:freelancers!contracts_freelancer_id_fkey (
+            profile_id,
+            profile:profiles!freelancers_profile_id_fkey (
+              id, full_name, avatar_url
+            )
+          )
         ),
-        opener:opened_by(full_name, email, avatar_url),
-        admin:admin_assigned(full_name, email, avatar_url)
+        opened_by_profile:profiles!contract_disputes_opened_by_fkey (
+          id, full_name, avatar_url, role
+        )
       `)
       .eq('id', id)
       .single();
 
     if (error || !dispute) {
-      return NextResponse.json(
-        { error: 'Dispute not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Dispute not found' }, { status: 404 });
     }
 
-    // Check access
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('is_admin')
-      .eq('id', user.id)
-      .single();
+    const contract = (dispute as any).contract;
+    const clientProfileId     = contract?.client?.profile_id;
+    const freelancerProfileId = contract?.freelancer?.profile_id;
 
-    const isParty = dispute.contract.client_id === user.id || 
-                    dispute.contract.freelancer_id === user.id ||
-                    dispute.opened_by === user.id;
+    const isParty =
+      profile?.is_admin ||
+      user.id === clientProfileId ||
+      user.id === freelancerProfileId;
 
-    if (!profile?.is_admin && !isParty) {
-      return NextResponse.json(
-        { error: 'Unauthorized to view this dispute' },
-        { status: 403 }
-      );
+    if (!isParty) {
+      return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
-    return NextResponse.json({ dispute });
+    return NextResponse.json({
+      dispute: {
+        ...dispute,
+        currentUserRole: profile?.is_admin
+          ? 'admin'
+          : user.id === clientProfileId
+          ? 'client'
+          : 'freelancer',
+        clientProfileId,
+        freelancerProfileId,
+        clientProfile: contract?.client?.profile,
+        freelancerProfile: contract?.freelancer?.profile,
+      },
+    });
   } catch (error: any) {
     console.error('Error in dispute GET:', error);
     return NextResponse.json(

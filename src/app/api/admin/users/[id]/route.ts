@@ -87,9 +87,10 @@ export async function DELETE(
     await supabase.from('admin_actions').insert({
       admin_id: user.id,
       action_type: 'delete_user',
-      target_type: 'user',
-      target_id: id,
-      details: { reason: 'Admin deletion' }
+      action_details: {
+        target_user_id: id,
+        reason: 'Admin deletion'
+      }
     });
 
     return NextResponse.json({ success: true });

@@ -87,33 +87,22 @@ function calculateProfileQualityScore(
 function calculatePerformanceScore(freelancer: FreelancerRow): number {
   let score = 0;
   
-  // Success rate (40 points) - assuming 100% if no data
+  // Success rate (50 points) - based on whether jobs have been completed
   const completedJobs = freelancer.completed_jobs || 0;
   if (completedJobs > 0) {
-    // Assuming most jobs are successful if they're completed
-    score += 40;
+    score += 50;
   } else {
-    score += 20; // New freelancers get half points
+    score += 25; // New freelancers get half points
   }
   
-  // Rating normalized (40 points)
+  // Rating normalized (50 points)
   if (freelancer.rating) {
-    score += (freelancer.rating / 5) * 40;
+    score += (freelancer.rating / 5) * 50;
   } else {
-    score += 20; // New freelancers get half points
+    score += 25; // New freelancers get half points
   }
-  
-  // Response time proxy - use recency of updates (20 points)
-  // Active freelancers are likely more responsive
-  if (freelancer.updated_at) {
-    const daysSinceUpdate = Math.floor(
-      (Date.now() - new Date(freelancer.updated_at).getTime()) / (1000 * 60 * 60 * 24)
-    );
-    if (daysSinceUpdate < 7) score += 20;
-    else if (daysSinceUpdate < 30) score += 15;
-    else if (daysSinceUpdate < 90) score += 10;
-    else score += 5;
-  }
+  // Note: recency/response-time is handled separately by calculateRecencyBoost
+  // and calculateActivityMultiplier to avoid triple-penalizing inactive freelancers.
   
   return Math.min(100, score);
 }

@@ -55,9 +55,8 @@ export async function POST(
     await supabase.from('admin_actions').insert({
       admin_id: user.id,
       action_type: 'approve_payment',
-      target_type: 'milestone',
-      target_id: id,
-      details: { 
+      action_details: {
+        milestone_id: id,
         amount: milestone.amount,
         milestone_title: milestone.title
       }

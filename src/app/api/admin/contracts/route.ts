@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status') || 'all';
 
-    // Fetch contracts with client and freelancer info
+    // Fetch contracts with client and freelancer info via role tables
     let query = supabase
       .from('contracts')
       .select(`
@@ -36,13 +36,20 @@ export async function GET(request: NextRequest) {
         total_amount,
         created_at,
         health_status,
-        client:profiles!contracts_client_id_fkey (
+        payment_status,
+        stripe_payment_intent_id,
+        auto_release_at,
+        client:clients!contracts_client_id_fkey (
           id,
-          full_name
+          profile:profiles!clients_profile_id_fkey (
+            full_name
+          )
         ),
-        freelancer:profiles!contracts_freelancer_id_fkey (
+        freelancer:freelancers!contracts_freelancer_id_fkey (
           id,
-          full_name
+          profile:profiles!freelancers_profile_id_fkey (
+            full_name
+          )
         )
       `)
       .order('created_at', { ascending: false })
@@ -68,8 +75,11 @@ export async function GET(request: NextRequest) {
       total_amount: c.total_amount,
       created_at: c.created_at,
       health_status: c.health_status || 'healthy',
-      client_name: c.client?.full_name || 'Unknown',
-      freelancer_name: c.freelancer?.full_name || 'Unknown',
+      payment_status: c.payment_status || 'pending',
+      stripe_payment_intent_id: c.stripe_payment_intent_id,
+      auto_release_at: c.auto_release_at,
+      client_name: c.client?.profile?.full_name || 'Unknown',
+      freelancer_name: c.freelancer?.profile?.full_name || 'Unknown',
     })) || [];
 
     return NextResponse.json({ contracts });

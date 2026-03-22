@@ -39,8 +39,9 @@ const Navbar = () => {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const { user, signOut } = useAuth();
   const isAuthenticated = !!user;
-  const isClient = user?.role === 'client';
-  const isFreelancer = user?.role === 'freelancer';
+  const isAdmin = !!user?.is_admin;
+  const isClient = !isAdmin && user?.role === 'client';
+  const isFreelancer = !isAdmin && user?.role === 'freelancer';
   const router = useRouter();
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -229,38 +230,62 @@ const Navbar = () => {
           ) : (
             // Authenticated navigation
             <>
-              <Link href="/dashboard" className="hover:text-black/30 transition py-2">
-                Dashboard
-              </Link>
-              
-              {isFreelancer && (
+              {isAdmin ? (
+                // Admin-only navbar
                 <>
-                  <Link href="/freelancer/browse-jobs" className="hover:text-black/30 transition py-2">
-                    Browse Jobs
+                  <Link href="/admin/dashboard" className="hover:text-black/30 transition py-2">
+                    Admin Dashboard
                   </Link>
-                  <Link href="/freelancer/my-proposals" className="hover:text-black/30 transition py-2">
-                    My Proposals
+                  <Link href="/admin/dashboard?tab=users" className="hover:text-black/30 transition py-2">
+                    Users
+                  </Link>
+                  <Link href="/admin/dashboard?tab=contracts" className="hover:text-black/30 transition py-2">
+                    Contracts
+                  </Link>
+                  <Link href="/admin/dashboard?tab=payments" className="hover:text-black/30 transition py-2">
+                    Payments
+                  </Link>
+                  <Link href="/admin/dashboard?tab=disputes" className="hover:text-black/30 transition py-2">
+                    Disputes
+                  </Link>
+                </>
+              ) : (
+                // Regular user navbar
+                <>
+                  <Link href="/dashboard" className="hover:text-black/30 transition py-2">
+                    Dashboard
+                  </Link>
+
+                  {isFreelancer && (
+                    <>
+                      <Link href="/freelancer/browse-jobs" className="hover:text-black/30 transition py-2">
+                        Browse Jobs
+                      </Link>
+                      <Link href="/freelancer/my-proposals" className="hover:text-black/30 transition py-2">
+                        My Proposals
+                      </Link>
+                    </>
+                  )}
+
+                  {isClient && (
+                    <>
+                      <Link href="/client/post-job" className="hover:text-black/30 transition py-2">
+                        Post a Job
+                      </Link>
+                      <Link href="/client/jobs" className="hover:text-black/30 transition py-2">
+                        My Jobs
+                      </Link>
+                    </>
+                  )}
+
+                  <Link href="/communication" className="hover:text-black/30 transition py-2">
+                    Messages
+                  </Link>
+                  <Link href="/contracts" className="hover:text-black/30 transition py-2">
+                    Contracts
                   </Link>
                 </>
               )}
-              
-              {isClient && (
-                <>
-                  <Link href="/client/post-job" className="hover:text-black/30 transition py-2">
-                    Post a Job
-                  </Link>
-                  <Link href="/client/jobs" className="hover:text-black/30 transition py-2">
-                    My Jobs
-                  </Link>
-                </>
-              )}
-              
-              <Link href="/communication" className="hover:text-black/30 transition py-2">
-                Messages
-              </Link>
-              <Link href="/contracts" className="hover:text-black/30 transition py-2">
-                Contracts
-              </Link>
             </>
           )}
         </div>
@@ -339,8 +364,9 @@ const Navbar = () => {
                         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
                         </svg>
-                        {user?.role === 'client' ? 'Client' : 'Freelancer'}
+                        {isAdmin ? 'Admin' : user?.role === 'client' ? 'Client' : 'Freelancer'}
                       </span>
+                      {!isAdmin && (
                       <Link 
                         href={isFreelancer ? `/freelancer/profile/${user?.id}` : `/client/profile`}
                         className="text-xs font-semibold text-[#0CF574] hover:text-[#0CF574]/80 transition-colors"
@@ -348,6 +374,7 @@ const Navbar = () => {
                       >
                         View Profile →
                       </Link>
+                      )}
                     </div>
                   </div>
 
@@ -388,6 +415,35 @@ const Navbar = () => {
                   
                   {/* Navigation Links */}
                   <div className="py-2">
+                    {isAdmin ? (
+                      // Admin-only dropdown links
+                      <>
+                        <Link
+                          href="/admin/dashboard"
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-purple-700 bg-purple-50 hover:bg-purple-100 transition-colors border-l-4 border-purple-500"
+                          onClick={() => setShowUserMenu(false)}
+                        >
+                          <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                          </svg>
+                          <span className="font-semibold">Admin Dashboard</span>
+                        </Link>
+                        <Link href="/admin/dashboard?tab=users" className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors" onClick={() => setShowUserMenu(false)}>
+                          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                          Manage Users
+                        </Link>
+                        <Link href="/admin/dashboard?tab=payments" className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors" onClick={() => setShowUserMenu(false)}>
+                          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          Payments
+                        </Link>
+                        <Link href="/admin/dashboard?tab=disputes" className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors" onClick={() => setShowUserMenu(false)}>
+                          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                          Disputes
+                        </Link>
+                      </>
+                    ) : (
+                      // Regular user dropdown links
+                      <>
                     <Link 
                       href="/dashboard" 
                       className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
@@ -398,20 +454,6 @@ const Navbar = () => {
                       </svg>
                       Dashboard
                     </Link>
-                    
-                    {/* Admin Dashboard Link - Only show if user is admin */}
-                    {user?.is_admin && (
-                      <Link 
-                        href="/admin/dashboard" 
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-purple-700 bg-purple-50 hover:bg-purple-100 transition-colors border-l-4 border-purple-500"
-                        onClick={() => setShowUserMenu(false)}
-                      >
-                        <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                        </svg>
-                        <span className="font-semibold">Admin Dashboard</span>
-                      </Link>
-                    )}
                     
                     {isFreelancer && (
                       <>
@@ -483,6 +525,8 @@ const Navbar = () => {
                       </svg>
                       Contracts
                     </Link>
+                      </>
+                    )}
                   </div>
                   
                   {/* Settings & Logout */}

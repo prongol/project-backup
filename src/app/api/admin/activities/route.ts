@@ -30,9 +30,9 @@ export async function GET(request: NextRequest) {
     const { data: contractActivities, error: contractError } = await supabase
       .from('contract_activity_log')
       .select(`
-        *,
+        id, activity_type, timestamp, user_role, details,
         contract:contracts!contract_activity_log_contract_id_fkey(title),
-        performer:profiles!contract_activity_log_performed_by_fkey(full_name)
+        performer:profiles!contract_activity_log_user_id_fkey(full_name)
       `)
       .order('timestamp', { ascending: false })
       .limit(limit / 2);
@@ -45,10 +45,10 @@ export async function GET(request: NextRequest) {
     const { data: adminActions, error: adminError } = await supabase
       .from('admin_actions')
       .select(`
-        *,
+        id, action_type, timestamp, action_details, outcome, notes,
         admin:profiles!admin_actions_admin_id_fkey(full_name)
       `)
-      .order('created_at', { ascending: false })
+      .order('timestamp', { ascending: false })
       .limit(limit / 2);
 
     if (adminError) {

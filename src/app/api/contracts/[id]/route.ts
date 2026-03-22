@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { EmailNotifications } from '@/lib/notificationEmails';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/contracts/[id] - Get single contract
 export async function GET(
   request: Request,
@@ -77,8 +79,16 @@ export async function GET(
     const isClient = clientData && contract.client_id === clientData.id;
     const isFreelancer = freelancerData && contract.freelancer_id === freelancerData.id;
 
-    // Verify user is part of the contract
-    if (!isClient && !isFreelancer) {
+    // Check if user is an admin
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', user.id)
+      .single();
+    const isAdmin = profileData?.is_admin === true;
+
+    // Verify user is part of the contract OR is an admin
+    if (!isClient && !isFreelancer && !isAdmin) {
       return NextResponse.json(
         { error: 'Unauthorized to view this contract' },
         { status: 403 }
@@ -100,13 +110,25 @@ export async function GET(
       .eq('contract_id', id)
       .maybeSingle();
 
+    // Get active dispute (if any) so the UI can link to the dispute thread
+    const { data: activeDispute } = await supabase
+      .from('contract_disputes')
+      .select('id, status')
+      .eq('contract_id', id)
+      .not('status', 'in', '("resolved","closed")')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
     return NextResponse.json({ 
       contract: {
         ...contract,
         milestones: milestones || [],
         escrow_status: escrowAccount?.status || 'pending',
-        escrow_funded: escrowAccount?.status === 'held'
-      }
+        escrow_funded: escrowAccount?.status === 'held',
+        active_dispute_id: activeDispute?.id ?? null,
+      },
+      is_admin: isAdmin
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to fetch contract';

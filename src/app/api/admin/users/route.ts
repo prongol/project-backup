@@ -28,10 +28,11 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || 'all';
     const role = searchParams.get('role') || 'all';
 
-    // Build query
+    // Build query - exclude admin users from the list
     let query = supabase
       .from('profiles')
       .select('id, email, full_name, role, created_at, account_status, trust_score, is_admin')
+      .eq('is_admin', false)
       .order('created_at', { ascending: false });
 
     // Apply filters

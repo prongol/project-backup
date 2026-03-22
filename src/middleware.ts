@@ -44,9 +44,15 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data?.user ?? null;
+  } catch (err) {
+    // Network error (e.g. during hot-reload) — don't redirect, just allow through
+    console.warn('⚠️ Middleware: auth.getUser() threw, allowing request through:', request.nextUrl.pathname);
+    return supabaseResponse;
+  }
 
   if (!user) {
     console.log('🔴 Middleware: No user session found for', request.nextUrl.pathname);

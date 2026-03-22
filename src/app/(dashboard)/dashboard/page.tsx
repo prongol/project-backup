@@ -52,13 +52,14 @@ export default function DashboardPage() {
     );
   }
   
-  // Show appropriate dashboard based on role
-  if (currentUser?.role === 'freelancer' && currentUser.profile_completed) {
-    return <FreelancerDashboard />;
+  // Show appropriate dashboard based on role (regardless of profile_completed —
+  // each dashboard handles its own incomplete-profile state internally)
+  if (currentUser?.role === 'client') {
+    return <ClientDashboard />;
   }
 
-  if (currentUser?.role === 'client' && currentUser.profile_completed) {
-    return <ClientDashboard />;
+  if (currentUser?.role === 'freelancer') {
+    return <FreelancerDashboard />;
   }
 
   return null;

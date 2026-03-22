@@ -45,9 +45,10 @@ export async function POST(
     await supabase.from('admin_actions').insert({
       admin_id: user.id,
       action_type: 'activate_user',
-      target_type: 'user',
-      target_id: id,
-      details: { reason: 'Admin activation' }
+      action_details: {
+        target_user_id: id,
+        reason: 'Admin activation'
+      }
     });
 
     return NextResponse.json({ success: true });

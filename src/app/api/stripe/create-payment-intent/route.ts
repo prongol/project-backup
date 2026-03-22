@@ -133,33 +133,54 @@ export async function POST(request: NextRequest) {
 
       if (isNoAccount || isCapabilityError) {
         console.warn(`Falling back to platform escrow: ${paymentError.message}`);
-        
+
+        // Calculate fee split so release-payment knows exactly how to split
+        const { PLATFORM_FEE_PERCENTAGE } = await import('@/lib/stripe');
+        const platformFeeAmount = Math.round((amount * PLATFORM_FEE_PERCENTAGE) / 100 * 100); // cents
+        const freelancerAmountCents = Math.round(amount * 100) - platformFeeAmount;
+        const freelancerConnectId = freelancerData?.stripe_account_id ?? '';
+
         // Fall back to platform-held escrow
         const fallbackIntent = await stripe.paymentIntents.create({
           amount: Math.round(amount * 100),
           currency: 'usd',
           customer: customerId,
           capture_method: 'manual',
-          automatic_payment_methods: {
-            enabled: true,
-          },
+          automatic_payment_methods: { enabled: true },
           metadata: {
             clientId: user.id,
             contractId,
             freelancerId,
+            freelancerConnectId,          // freelancers.stripe_account_id
             type: 'platform_escrow_fallback',
-            fallbackReason: isNoAccount ? 'missing_account' : 'restricted_account'
+            fallbackReason: isNoAccount ? 'missing_account' : 'restricted_account',
+            platformFeePercentage: PLATFORM_FEE_PERCENTAGE.toString(),
+            platformFeeCents: platformFeeAmount.toString(),
+            freelancerAmountCents: freelancerAmountCents.toString(),
           },
           description: `Escrow payment (held by platform) for contract ${contractId}`,
         });
+
+        // Persist fee breakdown on the contract so admin/release routes can use it
+        await supabase
+          .from('contracts')
+          .update({
+            stripe_payment_intent_id: fallbackIntent.id,
+            payment_status: 'pending',
+            platform_fee: platformFeeAmount / 100,
+            freelancer_amount: freelancerAmountCents / 100,
+          })
+          .eq('id', contractId);
 
         return NextResponse.json({
           clientSecret: fallbackIntent.client_secret,
           paymentIntentId: fallbackIntent.id,
           isPlatformEscrow: true,
-          message: isNoAccount 
-            ? 'Freelancer has not set up Stripe. Payment will be held by platform.' 
-            : 'Freelancer account restricted. Payment will be held by platform.'
+          platformFee: platformFeeAmount / 100,
+          freelancerAmount: freelancerAmountCents / 100,
+          message: isNoAccount
+            ? 'Freelancer has not set up Stripe. Payment will be held by platform.'
+            : 'Freelancer account restricted. Payment will be held by platform.',
         });
       }
 

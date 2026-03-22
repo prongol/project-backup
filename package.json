@@ -11,7 +11,7 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
     "websocket": "node websocket-server.js",
-    "dev:full": "concurrently \"npm run websocket\" \"npm run dev\""
+    "dev:full": "concurrently \"npm run dev\" \"stripe listen --forward-to localhost:3000/api/stripe/webhook\""
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

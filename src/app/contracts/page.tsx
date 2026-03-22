@@ -370,21 +370,21 @@ export default function ContractsPage() {
             {filteredContracts.map((contract) => (
               <div
                 key={contract.id}
-                className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow p-6 border border-gray-100"
+                className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow p-6 border border-gray-100 overflow-hidden"
               >
                 <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-start gap-3">
-                      <div className="flex-1">
-                        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-xl font-semibold text-gray-900 mb-2 truncate">
                           {contract.title}
                         </h3>
                         {contract.jobs && (
-                          <p className="text-sm text-gray-600 mb-2">
+                          <p className="text-sm text-gray-600 mb-2 truncate">
                             Project: {contract.jobs.title}
                           </p>
                         )}
-                        <p className="text-sm text-gray-600 line-clamp-2">
+                        <p className="text-sm text-gray-600 line-clamp-2 break-words overflow-hidden">
                           {contract.description}
                         </p>
                       </div>

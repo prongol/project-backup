@@ -52,23 +52,68 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Capture the payment (release from escrow)
+    // Retrieve the PI first to know its type and fee breakdown
+    const piBeforeCapture = await stripe.paymentIntents.retrieve(
+      contract.stripe_payment_intent_id
+    );
+
+    const isFallback = piBeforeCapture.metadata?.type === 'platform_escrow_fallback';
+    const connectAccountId = piBeforeCapture.metadata?.freelancerConnectId
+      || (contract as any).freelancer?.stripe_account_id
+      || null;
+
+    // For Connect PIs, Stripe automatically routes the fee via application_fee_amount
+    // and sends the rest to transfer_data.destination — just capture.
+    // For fallback PIs, we capture then manually transfer the freelancer's share.
     const paymentIntent = await stripe.paymentIntents.capture(
       contract.stripe_payment_intent_id
     );
 
-    // Transfer to freelancer's Stripe Connect account
-    if (contract.freelancer.stripe_account_id) {
-      await stripe.transfers.create({
-        amount: Math.round(contract.freelancer_amount * 100), // Convert to cents
-        currency: 'usd',
-        destination: contract.freelancer.stripe_account_id,
-        transfer_group: `contract_${contractId}`,
-        metadata: {
-          contract_id: contractId,
-          payment_intent_id: paymentIntent.id,
-        },
-      });
+    let transferId: string | null = null;
+    if (isFallback && connectAccountId) {
+      // Determine freelancer amount from contract DB or PI metadata
+      const freelancerCents =
+        piBeforeCapture.metadata?.freelancerAmountCents
+          ? parseInt(piBeforeCapture.metadata.freelancerAmountCents, 10)
+          : Math.round((contract.freelancer_amount || contract.total_amount * 0.93) * 100);
+
+      if (freelancerCents > 0) {
+        try {
+          const transfer = await stripe.transfers.create({
+            amount: freelancerCents,
+            currency: 'usd',
+            destination: connectAccountId,
+            transfer_group: `contract_${contractId}`,
+            metadata: {
+              contract_id: contractId,
+              payment_intent_id: paymentIntent.id,
+              release_type: 'fallback_manual_split',
+            },
+          });
+          transferId = transfer.id;
+        } catch (transferErr: any) {
+          // Log but don't fail — platform holds funds, admin can reconcile
+          console.error('Freelancer transfer failed after capture:', transferErr.message);
+        }
+      }
+    } else if (!isFallback && (contract as any).freelancer?.stripe_account_id) {
+      // Connect PI — Stripe handled the fee automatically at capture.
+      // Explicit transfer only needed if no transfer_data was set at PI creation.
+      if (!piBeforeCapture.transfer_data?.destination) {
+        const freelancerCents = Math.round((contract.freelancer_amount || contract.total_amount * 0.93) * 100);
+        try {
+          const transfer = await stripe.transfers.create({
+            amount: freelancerCents,
+            currency: 'usd',
+            destination: (contract as any).freelancer.stripe_account_id,
+            transfer_group: `contract_${contractId}`,
+            metadata: { contract_id: contractId, payment_intent_id: paymentIntent.id },
+          });
+          transferId = transfer.id;
+        } catch (transferErr: any) {
+          console.error('Connect transfer failed:', transferErr.message);
+        }
+      }
     }
 
     // Update contract status
@@ -83,8 +128,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Payment released to freelancer',
+      message: transferId
+        ? 'Payment captured and transferred to freelancer'
+        : isFallback
+        ? 'Payment captured. Freelancer transfer pending (no Connect account).'
+        : 'Payment released to freelancer',
       paymentIntentId: paymentIntent.id,
+      transferId,
     });
 
   } catch (error: any) {

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(
@@ -29,8 +30,11 @@ export async function POST(
     const body = await request.json();
     const { reason } = body;
 
+    // Use admin client to bypass RLS
+    const adminSupabase = createAdminClient();
+
     // Get contract details
-    const { data: contract, error: fetchError } = await supabase
+    const { data: contract, error: fetchError } = await adminSupabase
       .from('contracts')
       .select('*')
       .eq('id', id)
@@ -41,7 +45,7 @@ export async function POST(
     }
 
     // Update contract status to cancelled
-    const { error: updateError } = await supabase
+    const { error: updateError } = await adminSupabase
       .from('contracts')
       .update({ 
         status: 'cancelled',
@@ -56,12 +60,11 @@ export async function POST(
     }
 
     // Log admin action
-    await supabase.from('admin_actions').insert({
+    await adminSupabase.from('admin_actions').insert({
       admin_id: user.id,
+      contract_id: id,
       action_type: 'cancel_contract',
-      target_type: 'contract',
-      target_id: id,
-      details: { 
+      action_details: { 
         reason: reason || 'Admin cancellation',
         contract_title: contract.title,
         total_amount: contract.total_amount
@@ -69,11 +72,12 @@ export async function POST(
     });
 
     // Log in contract activity
-    await supabase.from('contract_activity_log').insert({
+    await adminSupabase.from('contract_activity_log').insert({
       contract_id: id,
-      action: 'cancelled',
-      description: `Contract cancelled by admin: ${reason || 'Admin cancellation'}`,
-      performed_by: user.id
+      activity_type: 'contract_cancelled',
+      user_id: user.id,
+      user_role: 'admin',
+      details: { reason: reason || 'Admin cancellation' }
     });
 
     return NextResponse.json({ success: true });
